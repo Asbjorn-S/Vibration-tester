@@ -35,8 +35,9 @@ bool running_test = false;
 #define MOTOR_IN1 32
 #define motorPWMFreq 5000
 #define motorPWMChannel 0
-#define SAMPLE_TIME 625 // 625 microseconds = 1.6kHz
-#define NUM_SAMPLES 1000 // number of samples to take
+#define SAMPLE_TIME 625 // 625 microseconds = 1.6kHz [us]
+#define TEST_TIME 500000 //  Time for test sequence [us]
+#define NUM_SAMPLES TEST_TIME/SAMPLE_TIME // number of samples to take
 
 uint16_t nsample = 0;
 uint16_t amplitude = 1023; // default amplitude for motor PWM
@@ -139,39 +140,58 @@ void run_test_sequence() {
       motor_start_time = millis();
       Serial.print("Motor start time: "); Serial.println(motor_start_time);
     }
-    // Serial.print("Current millis: "); Serial.println(millis());
-    // Serial.print("Time difference: "); Serial.println(millis() - motor_start_time);
-    // Wait for 0.5 seconds to take readings
+
     previousMicros = micros(); // reset previousMicros to current time
+    // Wait for 0.5 seconds to take readings
     while (millis() - motor_start_time > 500) {
       // Serial.println("Motor ready, taking readings");
       unsigned long timestamp = micros();
-      // sample the acceleration at 1kHz
-
-      // debugging: Print timing values
-      // Serial.print("Timestamp: "); Serial.print(timestamp);
-      // Serial.print(" PreviousMillis: "); Serial.print(previousMillis);
-      // Serial.print(" SAMPLE_TIME: "); Serial.println(SAMPLE_TIME);
+      // sample the acceleration at 
 
       if (timestamp - previousMicros >= SAMPLE_TIME) {
         previousMicros += SAMPLE_TIME; // increment by sample time to avoid drift
+
         if (nsample < NUM_SAMPLES) {
-          // Serial.println("Taking sample");
-          data1[nsample] = sample_accelerometer(lis1, timestamp);
-          data2[nsample] = sample_accelerometer(lis2, timestamp);
+          AccelerometerData sample1 = sample_accelerometer(lis1, timestamp);
+          AccelerometerData sample2 = sample_accelerometer(lis2, timestamp);
+
+          // Create JSON object
+          StaticJsonDocument<256> doc;
+          doc["timestamp"] = sample1.timestamp;
+          JsonObject accel1 = doc.createNestedObject("accelerometer1");
+          accel1["x"] = sample1.x;
+          accel1["y"] = sample1.y;
+          accel1["z"] = sample1.z;
+
+          JsonObject accel2 = doc.createNestedObject("accelerometer2");
+          accel2["x"] = sample2.x;
+          accel2["y"] = sample2.y;
+          accel2["z"] = sample2.z;
+
+          // Serialize JSON to string
+          char jsonBuffer[512];
+          serializeJson(doc, jsonBuffer);
+
+          // Publish JSON to MQTT
+          client.publish(mqtt_topic, jsonBuffer);
+
+          // Store data locally
+          data1[nsample] = sample1;
+          data2[nsample] = sample2;
           nsample++;
         }
         else {
           Serial.println("Max samples reached, stopping test sequence");
           nsample = 0;
-          Serial.println("Test sequence complete");
           // Stop motor
           digitalWrite(MOTOR_IN1, LOW);
           running_test = false;
-          Serial.println("Accelerometer 1 Data:");
-          print_accelerometer_data(data1, NUM_SAMPLES);
-          Serial.println("Accelerometer 2 Data:");
-          print_accelerometer_data(data2, NUM_SAMPLES);
+
+          // Print data to Serial Monitor
+          // Serial.println("Accelerometer 1 Data:");
+          // print_accelerometer_data(data1, NUM_SAMPLES);
+          // Serial.println("Accelerometer 2 Data:");
+          // print_accelerometer_data(data2, NUM_SAMPLES);
           break;
         }
       }
