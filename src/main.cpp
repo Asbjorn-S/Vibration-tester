@@ -2,20 +2,25 @@
 #include <SPI.h>
 #include <Adafruit_LIS3DH.h>
 #include <Adafruit_Sensor.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
-// Used for software SPI
-// #define LIS3DH_CLK 13
-// #define LIS3DH_MISO 12
-// #define LIS3DH_MOSI 11
-// Used for hardware & software SPI
-#define LIS3DH1_CS 5
-#define LIS3DH2_CS 27
+// WiFi and MQTT configuration
+const char* ssid = "iOT Deco";           // Replace with your WiFi SSID
+const char* password = "bre-rule-247";   // Replace with your WiFi password
+const char* mqtt_server = "192.168.68.121"; // Replace with your MQTT broker address
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+const char* mqtt_topic = "vibration/data"; // MQTT topic to publish data
+
+#define LIS3DH1_CS 5 // Chip select pin for first LIS3DH
+#define LIS3DH2_CS 27 // Chip select pin for second LIS3DH
 #define HSPI_SCK 14   // HSPI Clock
 #define HSPI_MISO 12  // HSPI MISO
 #define HSPI_MOSI 13  // HSPI MOSI
-// hardware SPI
-//Adafruit_LIS3DH lis = Adafruit_LIS3DH(LIS3DH_CS);
-// Low Power 5Khz data rate needs faster SPI, and calling setPerformanceMode & setDataRate
 SPIClass hspi(HSPI); // Use VSPI for hardware SPI
 Adafruit_LIS3DH lis1 = Adafruit_LIS3DH(LIS3DH1_CS, &SPI, 2000000); // SPI speed 2MHz
 Adafruit_LIS3DH lis2 = Adafruit_LIS3DH(LIS3DH2_CS, &hspi, 2000000); // SPI speed 2MHz
@@ -46,6 +51,40 @@ struct AccelerometerData {
 AccelerometerData data1[NUM_SAMPLES];
 AccelerometerData data2[NUM_SAMPLES];
 
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect("VibrationClient")) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
+}
 
 void accel_setup (Adafruit_LIS3DH &lis, lis3dh_range_t range = LIS3DH_RANGE_8_G, lis3dh_mode_t performance = LIS3DH_MODE_LOW_POWER ,lis3dh_dataRate_t dataRate = LIS3DH_DATARATE_LOWPOWER_1K6HZ) {
   if (! lis.begin()) {   // change this to 0x19 for alternative i2c address (default:0x18)
@@ -144,6 +183,12 @@ void setup(void) {
   Serial.begin(115200);
   //while (!Serial) delay(10);     // will pause Zero, Leonardo, etc until serial console opens
 
+  // Connect to WiFi
+  setup_wifi();
+
+  // Set up MQTT
+  client.setServer(mqtt_server, 1883);
+
   accel_setup(lis1);
   accel_setup(lis2);
 
@@ -158,6 +203,11 @@ void setup(void) {
 }
 
 void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
   // listen for input from serial to set target frequency for vibration motor
   if (Serial.available() > 0) {
     amplitude = Serial.parseInt();
