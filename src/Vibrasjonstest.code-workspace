@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../OneDrive - NTNU/6. Semester/Bachelor/VSCode"
+		},
+		{
+			"name": "Vibration tester",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.tcc": "cpp",
+			"fstream": "cpp",
+			"iosfwd": "cpp",
+			"istream": "cpp",
+			"limits": "cpp",
+			"sstream": "cpp",
+			"streambuf": "cpp"
+		}
+	}
+}
