@@ -5,6 +5,9 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <algorithm>
+
+#define DEBUG // Uncomment to enable debug prints
 
 // WiFi and MQTT configuration
 const char* ssid = "iOT Deco";           // Replace with your WiFi SSID
@@ -13,6 +16,10 @@ const char* mqtt_server = "192.168.68.121"; // Replace with your MQTT broker add
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+
+#define MQTT_MAX_PACKET_SIZE 4096  // Increase this value based on your payload size
+#define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
 const char* mqtt_topic = "vibration/data"; // MQTT topic to publish data
 
@@ -132,72 +139,135 @@ void print_accelerometer_data(const AccelerometerData* data, uint16_t num_sample
 
 void run_test_sequence() {
   if (digitalRead(BUTTONPIN) || running_test) {
-    if (! running_test) {
+    if (!running_test) {
       Serial.println("Button pressed, starting test sequence");
       running_test = true;
       // Start motor
       digitalWrite(MOTOR_IN1, HIGH);
       motor_start_time = millis();
-      Serial.print("Motor start time: "); Serial.println(motor_start_time);
+      #ifdef DEBUG
+        Serial.print("Motor start time: ");
+        Serial.println(motor_start_time);
+      #endif
     }
 
     previousMicros = micros(); // reset previousMicros to current time
-    // Wait for 0.5 seconds to take readings
-    while (millis() - motor_start_time > 500) {
-      // Serial.println("Motor ready, taking readings");
-      unsigned long timestamp = micros();
-      // sample the acceleration at 
-
-      if (timestamp - previousMicros >= SAMPLE_TIME) {
-        previousMicros += SAMPLE_TIME; // increment by sample time to avoid drift
-
-        if (nsample < NUM_SAMPLES) {
-          AccelerometerData sample1 = sample_accelerometer(lis1, timestamp);
-          AccelerometerData sample2 = sample_accelerometer(lis2, timestamp);
-
-          // Create JSON object
-          StaticJsonDocument<256> doc;
-          doc["timestamp"] = sample1.timestamp;
-          JsonObject accel1 = doc.createNestedObject("accelerometer1");
-          accel1["x"] = sample1.x;
-          accel1["y"] = sample1.y;
-          accel1["z"] = sample1.z;
-
-          JsonObject accel2 = doc.createNestedObject("accelerometer2");
-          accel2["x"] = sample2.x;
-          accel2["y"] = sample2.y;
-          accel2["z"] = sample2.z;
-
-          // Serialize JSON to string
-          char jsonBuffer[512];
-          serializeJson(doc, jsonBuffer);
-
-          // Publish JSON to MQTT
-          client.publish(mqtt_topic, jsonBuffer);
-
-          // Store data locally
-          data1[nsample] = sample1;
-          data2[nsample] = sample2;
-          nsample++;
-        }
-        else {
-          Serial.println("Max samples reached, stopping test sequence");
-          nsample = 0;
-          // Stop motor
-          digitalWrite(MOTOR_IN1, LOW);
-          running_test = false;
-
-          // Print data to Serial Monitor
-          // Serial.println("Accelerometer 1 Data:");
-          // print_accelerometer_data(data1, NUM_SAMPLES);
-          // Serial.println("Accelerometer 2 Data:");
-          // print_accelerometer_data(data2, NUM_SAMPLES);
-          break;
+    if (millis() - motor_start_time > 500) { // wait for 500ms before starting sampling
+      while (true) { // Run for the test duration
+        unsigned long timestamp = micros();
+      
+        if (timestamp - previousMicros >= SAMPLE_TIME) {
+          previousMicros += SAMPLE_TIME; // increment by sample time to avoid drift
+        
+          if (nsample < NUM_SAMPLES) {
+            // Sample accelerometer data
+            data1[nsample] = sample_accelerometer(lis1, timestamp);
+            data2[nsample] = sample_accelerometer(lis2, timestamp);
+            nsample++;
+          } else {
+            Serial.println("Max samples reached, stopping test sequence");
+            break;
+          }
         }
       }
+    
+      // Stop motor after the test
+      digitalWrite(MOTOR_IN1, LOW);
+      running_test = false;
+
+      // Serialize and publish the dataset in chunks
+      const size_t chunkSize = 30; // Number of samples per chunk
+      for (uint16_t start = 0; start < nsample; start += chunkSize) {
+        
+        #ifdef DEBUG
+          // Print the current chunk size and free heap memory
+          Serial.print("Free heap: ");
+          Serial.println(ESP.getFreeHeap());
+        #endif
+
+        uint16_t end = std::min<uint16_t>(start + chunkSize, nsample);
+
+        // Use DynamicJsonDocument for flexibility
+        DynamicJsonDocument doc(JSON_BUFFER_SIZE); // Adjust size based on chunk size
+        JsonArray accel1Array = doc.createNestedArray("accelerometer1");
+        JsonArray accel2Array = doc.createNestedArray("accelerometer2");
+
+        for (uint16_t i = start; i < end; i++) {
+          JsonObject sample1Obj = accel1Array.createNestedObject();
+          sample1Obj["x"] = data1[i].x;
+          sample1Obj["y"] = data1[i].y;
+          sample1Obj["z"] = data1[i].z;
+          sample1Obj["timestamp"] = data1[i].timestamp;
+
+          JsonObject sample2Obj = accel2Array.createNestedObject();
+          sample2Obj["x"] = data2[i].x;
+          sample2Obj["y"] = data2[i].y;
+          sample2Obj["z"] = data2[i].z;
+          sample2Obj["timestamp"] = data2[i].timestamp;
+        }
+
+        // Add chunk information
+        doc["chunk"] = start / chunkSize + 1;
+        doc["totalChunks"] = (nsample + chunkSize - 1) / chunkSize;
+
+        // Serialize the JSON document to a string
+        char jsonBuffer[JSON_BUFFER_SIZE]; // Adjust size based on chunk size
+        size_t jsonSize = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+
+        if (jsonSize > 0) {
+          // Check if the client is connected
+          if (!client.connected()) {
+            Serial.println("MQTT client disconnected. Reconnecting...");
+            reconnect();
+          }
+          
+          // Attempt to publish with retry
+          int retries = 3;
+          bool success = false;
+          
+          while (retries > 0 && !success) {
+            success = client.publish(mqtt_topic, jsonBuffer);
+            if (success) {
+              #ifdef DEBUG
+                Serial.print("Chunk ");
+                Serial.print(doc["chunk"].as<int>());
+                Serial.print("/");
+                Serial.print(doc["totalChunks"].as<int>());
+                Serial.println(" published successfully.");
+                #endif
+            } else {
+              Serial.print("Failed to publish chunk. Retrying... (");
+              Serial.print(retries);
+              Serial.println(" attempts left)");
+              delay(100); // Wait before retrying
+              retries--;
+            }
+          }
+          
+          if (!success) {
+            Serial.println("Failed to publish after multiple attempts.");
+          }
+          
+          // Small delay between publishing chunks to avoid flooding the broker
+          delay(50);
+        } else {
+          Serial.println("Failed to serialize JSON chunk.");
+        }
+        #ifdef DEBUG
+          //  Print the serialized JSON, its size and free heap memory
+          Serial.print("Serialized JSON size: ");
+          Serial.println(jsonSize);
+          Serial.print("Serialized JSON: ");
+          Serial.println(jsonBuffer);
+          Serial.print("Free heap: ");
+          Serial.println(ESP.getFreeHeap());
+        #endif
+      }
     }
-  }
+    nsample = 0; // Reset sample counter for the next test
+  } 
 }
+
 
 void setup(void) {
   Serial.begin(115200);
@@ -207,7 +277,20 @@ void setup(void) {
   setup_wifi();
 
   // Set up MQTT
+  client.setBufferSize(MQTT_MAX_PACKET_SIZE);
   client.setServer(mqtt_server, 1883);
+  client.setKeepAlive(60); // Set keep-alive interval to 60 seconds
+
+  // Test simple MQTT publish after connection
+  if (client.connect("VibrationClientTest")) {
+    Serial.println("Testing MQTT connection with small message...");
+    bool testSuccess = client.publish("vibration/test", "Hello World");
+    if (testSuccess) {
+      Serial.println("Test message published successfully!");
+    } else {
+      Serial.println("Failed to publish test message. Check broker configuration.");
+    }
+  }
 
   accel_setup(lis1);
   accel_setup(lis2);
@@ -219,6 +302,7 @@ void setup(void) {
   ledcSetup(motorPWMChannel, motorPWMFreq, 10);
   ledcAttachPin(MOTOR_PWM, motorPWMChannel);
   ledcWrite(motorPWMChannel, amplitude);
+
   Serial.println("Setup complete");
 }
 
