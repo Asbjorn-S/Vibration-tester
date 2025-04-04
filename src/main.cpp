@@ -21,7 +21,7 @@ PubSubClient client(espClient);
 #define MQTT_MAX_PACKET_SIZE 4096  // Increase this value based on your payload size
 #define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
-const char* mqtt_topic = "vibration/data"; // MQTT topic to publish data
+const char* vibration_data_topic = "vibration/data"; // MQTT topic to publish data
 
 // Define the pins for the LIS3DH accelerometers
 #define LIS3DH1_CS 5 // Chip select pin for first LIS3DH
@@ -61,6 +61,7 @@ uint16_t nsample = 0;
 
 // FFT settings
 #define FFT_SAMPLES 1024 // Number of samples for FFT
+#define CAL_STEP 50 // Step size for calibration
 double vReal[FFT_SAMPLES]; // Real part of the FFT input
 double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_FREQ); // Initialize FFT object
@@ -73,6 +74,12 @@ struct AccelerometerData {
 };
 AccelerometerData data1[NUM_SAMPLES];
 AccelerometerData data2[NUM_SAMPLES];
+
+struct frequencyData {
+  double frequency;
+  uint16_t amplitude;
+};
+frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
 
 void setup_wifi() {
   delay(10);
@@ -154,21 +161,24 @@ void print_accelerometer_data(const AccelerometerData* data, uint16_t num_sample
   Serial.println("===================================");
 }
 
-void calibrate_vibration_motor() {
+void test_frequency_v_amplitude() {
   // Placeholder for motor calibration logic
   // This function can be used to calibrate the motor based on the accelerometer data
   Serial.println("Calibrating vibration motor...");
   // Add calibration logic here
-  const uint16_t step = 50; // Step size for amplitude
   // const uint16_t calibrationTime = 1000; // Time to measure frequency at each amplitude [ms]
 
   ledcWrite(motorPWMChannel, minAmplitude); // Set initial amplitude
   digitalWrite(MOTOR_IN1, HIGH); // Start the motor
 
+  // double peakFrequency[(maxAmplitude-minAmplitude)/CAL_STEP+5] = {0};
+  uint16_t frequencyIndex = 0;
 
-
-  for (uint16_t amplitude = minAmplitude; amplitude < maxAmplitude + step; amplitude += step) {
-    if (amplitude > maxAmplitude) amplitude = maxAmplitude; // Ensure amplitude doesn't exceed maxAmplitude
+  for (uint16_t amplitude = minAmplitude; amplitude <= maxAmplitude; amplitude += CAL_STEP) {
+    // Use the last iteration to test exactly at maxAmplitude
+    if (amplitude > maxAmplitude - CAL_STEP && amplitude < maxAmplitude) {
+      amplitude = maxAmplitude;
+    }
     // Set motor amplitude
     ledcWrite(motorPWMChannel, amplitude);
     // Wait for the motor to stabilize
@@ -177,7 +187,6 @@ void calibrate_vibration_motor() {
     // Measure frequency
     unsigned long startTime = millis();
     uint16_t sampleIndex = 0;
-
     while (sampleIndex < FFT_SAMPLES) {
       unsigned long timestamp = micros();
       AccelerometerData sample = sample_accelerometer(lis1, timestamp);
@@ -205,24 +214,26 @@ void calibrate_vibration_motor() {
     FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // Apply a Hamming window
     FFT.compute(FFT_FORWARD); // Compute the FFT
     FFT.complexToMagnitude(); // Compute magnitudes
-
-    double peakFrequency = 0;
     double maxMagnitude = 0;
     for (uint16_t i = 1; i < (FFT_SAMPLES / 2); i++) { // Ignore DC component at index 0
       if (vReal[i] > maxMagnitude) {
         maxMagnitude = vReal[i];
-        peakFrequency = i * (SAMPLE_FREQ / FFT_SAMPLES);
+        freqData[frequencyIndex].frequency = i * (SAMPLE_FREQ / FFT_SAMPLES);
       }
     }
 
+    // Store the frequency and amplitude in the frequencyData struct
+    freqData[frequencyIndex].amplitude = amplitude;
+
     // Print the result for debugging
     #ifdef DEBUG
-      Serial.print("Amplitude: ");
-      Serial.print(amplitude);
-      Serial.print(" -> Frequency: ");
-      Serial.print(peakFrequency);
-      Serial.println(" Hz");
+      // Serial.print("Amplitude: ");
+      // Serial.print(amplitude);
+      // Serial.print(" -> Frequency: ");
+      // Serial.print(peakFrequency[amplitude]);
+      // Serial.println(" Hz");
     #endif
+    frequencyIndex++;
   }
   // Turn off the motor after calibration
   digitalWrite(MOTOR_IN1, LOW);
@@ -319,7 +330,7 @@ void run_test_sequence() {
           bool success = false;
           
           while (retries > 0 && !success) {
-            success = client.publish(mqtt_topic, jsonBuffer);
+            success = client.publish(vibration_data_topic, jsonBuffer);
             if (success) {
               #ifdef DEBUG
                 Serial.print("Chunk ");
@@ -413,9 +424,20 @@ void loop() {
     Serial.print("Amplitude: "); Serial.println(amplitude);
   }
   // before starting the test sequence, calibrate the motor
-  // if (digitalRead(BUTTONPIN)) {
-  //   calibrate_vibration_motor();
-  // }
+  if (digitalRead(BUTTONPIN)) {
+    test_frequency_v_amplitude();
+    // Print frequency data for debugging
+    #ifdef DEBUG
+      Serial.println("Frequency data:");
+      for (uint16_t i = 0; i <= (maxAmplitude-minAmplitude)/CAL_STEP; i++) {
+        Serial.print(" -> Frequency: ");
+        Serial.print(freqData[i].frequency);
+        Serial.print(" Hz, Amplitude: ");
+        Serial.println(freqData[i].amplitude);
+      }
+    #endif
+  }
+  
   // Run test sequence when button is pressed
-  run_test_sequence();
+  // run_test_sequence();
 }
