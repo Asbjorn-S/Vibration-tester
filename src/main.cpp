@@ -6,23 +6,24 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <algorithm>
+#include <arduinoFFT.h>
 
 #define DEBUG // Uncomment to enable debug prints
 
 // WiFi and MQTT configuration
 const char* ssid = "iOT Deco";           // Replace with your WiFi SSID
 const char* password = "bre-rule-247";   // Replace with your WiFi password
-const char* mqtt_server = "192.168.68.121"; // Replace with your MQTT broker address
+const char* mqtt_server = "192.168.68.103"; // Replace with your MQTT broker address
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-
 
 #define MQTT_MAX_PACKET_SIZE 4096  // Increase this value based on your payload size
 #define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
 const char* mqtt_topic = "vibration/data"; // MQTT topic to publish data
 
+// Define the pins for the LIS3DH accelerometers
 #define LIS3DH1_CS 5 // Chip select pin for first LIS3DH
 #define LIS3DH2_CS 27 // Chip select pin for second LIS3DH
 #define HSPI_SCK 14   // HSPI Clock
@@ -32,23 +33,37 @@ SPIClass hspi(HSPI); // Use VSPI for hardware SPI
 Adafruit_LIS3DH lis1 = Adafruit_LIS3DH(LIS3DH1_CS, &SPI, 2000000); // SPI speed 2MHz
 Adafruit_LIS3DH lis2 = Adafruit_LIS3DH(LIS3DH2_CS, &hspi, 2000000); // SPI speed 2MHz
 
+// Variables for motor control and sampling
 unsigned long motor_start_time = 0;
 unsigned long previousMicros = 0;
 
 bool running_test = false;
 
+// Define the pins for the motor and button
 #define BUTTONPIN 26
 #define MOTOR_PWM 33
 #define MOTOR_IN1 32
 #define motorPWMFreq 5000
 #define motorPWMChannel 0
+
+// Motor PWM settings
+const uint16_t minAmplitude = 250; // Minimum PWM amplitude
+const uint16_t maxAmplitude = 1023; // Maximum PWM amplitude
+uint16_t amplitude = 1023; // default amplitude for motor PWM
+
+// Sampling settings
 #define SAMPLE_TIME 625 // 625 microseconds = 1.6kHz [us]
+#define SAMPLE_FREQ 1000000/SAMPLE_TIME // Sampling frequency [Hz]
 #define TEST_TIME 500000 //  Time for test sequence [us]
 #define NUM_SAMPLES TEST_TIME/SAMPLE_TIME // number of samples to take
 
 uint16_t nsample = 0;
-uint16_t amplitude = 1023; // default amplitude for motor PWM
 
+// FFT settings
+#define FFT_SAMPLES 1024 // Number of samples for FFT
+double vReal[FFT_SAMPLES]; // Real part of the FFT input
+double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
+ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_FREQ); // Initialize FFT object
 
 struct AccelerometerData {
   int x;
@@ -94,12 +109,12 @@ void reconnect() {
   }
 }
 
-void accel_setup (Adafruit_LIS3DH &lis, lis3dh_range_t range = LIS3DH_RANGE_8_G, lis3dh_mode_t performance = LIS3DH_MODE_LOW_POWER ,lis3dh_dataRate_t dataRate = LIS3DH_DATARATE_LOWPOWER_1K6HZ) {
+void accel_setup (Adafruit_LIS3DH &lis, const uint8_t id, lis3dh_range_t range = LIS3DH_RANGE_8_G, lis3dh_mode_t performance = LIS3DH_MODE_LOW_POWER ,lis3dh_dataRate_t dataRate = LIS3DH_DATARATE_LOWPOWER_1K6HZ) {
   if (! lis.begin()) {   // change this to 0x19 for alternative i2c address (default:0x18)
-    Serial.println("Couldnt start");
+    Serial.print("Couldnt start sensor ");Serial.println(id);
     while (1) yield();
   }
-  Serial.println("LIS3DH found!");
+  Serial.print("LIS3DH ");Serial.print(id);Serial.println(" found!");
 
   lis.setRange(range);   // 2, 4, 8 or 16 G!
   lis.setPerformanceMode(performance); // normal, low power, or high res
@@ -114,10 +129,12 @@ AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
   //return raw value of acceleration in 8 bit value
   lis.read();
 
-  // Debugging: Print raw accelerometer values
-  // Serial.print("Raw X: "); Serial.print(lis.x);
-  // Serial.print(" Y: "); Serial.print(lis.y);
-  // Serial.print(" Z: "); Serial.println(lis.z);
+  #ifdef DEBUG
+    //  Print raw accelerometer values
+    // Serial.print("Raw X: "); Serial.print(lis.x);
+    // Serial.print(" Y: "); Serial.print(lis.y);
+    // Serial.print(" Z: "); Serial.println(lis.z);
+  #endif
 
   // Assign the read values to the struct
   tmp.x = lis.x;
@@ -135,6 +152,82 @@ void print_accelerometer_data(const AccelerometerData* data, uint16_t num_sample
     Serial.print("Z: "); Serial.print(data[i].z); Serial.println();
   }
   Serial.println("===================================");
+}
+
+void calibrate_vibration_motor() {
+  // Placeholder for motor calibration logic
+  // This function can be used to calibrate the motor based on the accelerometer data
+  Serial.println("Calibrating vibration motor...");
+  // Add calibration logic here
+  const uint16_t step = 50; // Step size for amplitude
+  // const uint16_t calibrationTime = 1000; // Time to measure frequency at each amplitude [ms]
+
+  ledcWrite(motorPWMChannel, minAmplitude); // Set initial amplitude
+  digitalWrite(MOTOR_IN1, HIGH); // Start the motor
+
+
+
+  for (uint16_t amplitude = minAmplitude; amplitude < maxAmplitude + step; amplitude += step) {
+    if (amplitude > maxAmplitude) amplitude = maxAmplitude; // Ensure amplitude doesn't exceed maxAmplitude
+    // Set motor amplitude
+    ledcWrite(motorPWMChannel, amplitude);
+    // Wait for the motor to stabilize
+    delay(100); // Wait for 100 ms to stabilize
+
+    // Measure frequency
+    unsigned long startTime = millis();
+    uint16_t sampleIndex = 0;
+
+    while (sampleIndex < FFT_SAMPLES) {
+      unsigned long timestamp = micros();
+      AccelerometerData sample = sample_accelerometer(lis1, timestamp);
+
+      // Store the accelerometer's X-axis data in the FFT input array
+      vReal[sampleIndex] = sample.x; // Magnitude of acceleration vector
+      vImag[sampleIndex] = 0; // Imaginary part is zero for real input
+      sampleIndex++;
+
+      // Wait for the next sample (based on the sampling frequency)
+      delayMicroseconds(SAMPLE_TIME);
+    }
+    
+    #ifdef DEBUG
+    // print vReal for debugging
+      // Serial.print("vReal: ");
+      // for (uint16_t i = 0; i < FFT_SAMPLES; i++) {
+      //   Serial.print(vReal[i]);
+      //   Serial.print(" ");
+      // }
+      // Serial.println();
+    #endif
+
+    // Perform FFT
+    FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // Apply a Hamming window
+    FFT.compute(FFT_FORWARD); // Compute the FFT
+    FFT.complexToMagnitude(); // Compute magnitudes
+
+    double peakFrequency = 0;
+    double maxMagnitude = 0;
+    for (uint16_t i = 1; i < (FFT_SAMPLES / 2); i++) { // Ignore DC component at index 0
+      if (vReal[i] > maxMagnitude) {
+        maxMagnitude = vReal[i];
+        peakFrequency = i * (SAMPLE_FREQ / FFT_SAMPLES);
+      }
+    }
+
+    // Print the result for debugging
+    #ifdef DEBUG
+      Serial.print("Amplitude: ");
+      Serial.print(amplitude);
+      Serial.print(" -> Frequency: ");
+      Serial.print(peakFrequency);
+      Serial.println(" Hz");
+    #endif
+  }
+  // Turn off the motor after calibration
+  digitalWrite(MOTOR_IN1, LOW);
+  ledcWrite(motorPWMChannel, minAmplitude); // Set amplitude to minimum 
+  Serial.println("Calibration complete.");
 }
 
 void run_test_sequence() {
@@ -268,7 +361,6 @@ void run_test_sequence() {
   } 
 }
 
-
 void setup(void) {
   Serial.begin(115200);
   //while (!Serial) delay(10);     // will pause Zero, Leonardo, etc until serial console opens
@@ -292,8 +384,8 @@ void setup(void) {
     }
   }
 
-  accel_setup(lis1);
-  accel_setup(lis2);
+  accel_setup(lis1, 1);
+  accel_setup(lis2, 2);
 
   pinMode(BUTTONPIN, INPUT_PULLDOWN); // button to trigger motor
   pinMode(MOTOR_IN1, OUTPUT); // enable pin for motor
@@ -320,6 +412,10 @@ void loop() {
     ledcWrite(motorPWMChannel, amplitude);
     Serial.print("Amplitude: "); Serial.println(amplitude);
   }
+  // before starting the test sequence, calibrate the motor
+  // if (digitalRead(BUTTONPIN)) {
+  //   calibrate_vibration_motor();
+  // }
   // Run test sequence when button is pressed
   run_test_sequence();
 }
