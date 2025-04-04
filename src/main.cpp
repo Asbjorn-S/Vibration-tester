@@ -83,6 +83,93 @@ frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
 
 bool calibrationComplete = false; // Flag to indicate if calibration is complete
 
+// Musical notes definitions (C4 to B5 range scaled to fit 57-298Hz)
+// Musical notes definitions (scaled to fit 75-301Hz range)
+#define NOTE_C4  75.0
+#define NOTE_D4  84.0
+#define NOTE_E4  94.5
+#define NOTE_F4  100.0
+#define NOTE_G4  112.5
+#define NOTE_A4  126.0
+#define NOTE_B4  141.5
+#define NOTE_C5  150.0
+#define NOTE_D5  168.0
+#define NOTE_E5  189.0
+#define NOTE_F5  200.0
+#define NOTE_G5  225.0
+#define NOTE_A5  252.0
+#define NOTE_B5  283.0
+#define NOTE_C6  301.0
+#define REST     0.0
+
+// Note durations: 4 = quarter note, 8 = eighth note, etc.
+const int MELODY_LENGTH = 25;
+
+// Function prototype for frequencyToAmplitude
+uint16_t frequencyToAmplitude(double targetFrequency);
+double happyBirthdayMelody[MELODY_LENGTH] = {
+  NOTE_C4, NOTE_C4, NOTE_D4, NOTE_C4, NOTE_F4, NOTE_E4,
+  NOTE_C4, NOTE_C4, NOTE_D4, NOTE_C4, NOTE_G4, NOTE_F4,
+  NOTE_C4, NOTE_C4, NOTE_C5, NOTE_A4, NOTE_F4, NOTE_E4, NOTE_D4,
+  NOTE_B4, NOTE_B4, NOTE_A4, NOTE_F4, NOTE_G4, NOTE_F4
+};
+
+// Note durations (1: whole note, 2: half note, 4: quarter note, 8: eighth note)
+int noteDurations[MELODY_LENGTH] = {
+  4, 4, 2, 2, 2, 1,
+  4, 4, 2, 2, 2, 1,
+  4, 4, 2, 2, 3, 3, 1,
+  4, 4, 2, 2, 2, 1
+};
+
+/**
+ * Plays the Happy Birthday melody using the vibration motor
+ * 
+ * @param tempo Tempo in beats per minute (BPM)
+ */
+void playHappyBirthday(int tempo = 180) {
+  Serial.println("Playing Happy Birthday...");
+  
+  // Turn on motor driver
+  digitalWrite(MOTOR_IN1, HIGH);
+  
+  // Calculate quarter note duration in milliseconds (60000 ms / BPM)
+  int quarterNoteDuration = 60000 / tempo;
+  
+  for (int i = 0; i < MELODY_LENGTH; i++) {
+    double currentNote = happyBirthdayMelody[i];
+    
+    // Calculate note duration in milliseconds
+    int noteDuration = quarterNoteDuration * (4.0 / noteDurations[i]);
+    
+    if (currentNote == REST) {
+      // If REST, turn off motor
+      ledcWrite(motorPWMChannel, 0);
+    } else {
+      // Set motor frequency
+      Serial.print("Playing note: ");
+      Serial.print(currentNote);
+      Serial.print(" Hz for ");
+      Serial.print(noteDuration);
+      Serial.println(" ms");
+      
+      amplitude = frequencyToAmplitude(currentNote);
+      ledcWrite(motorPWMChannel, amplitude);
+    }
+    
+    // Play the note for its duration minus a small gap between notes
+    delay(noteDuration * 0.9);
+    
+    // Brief pause between notes (10% of note duration)
+    ledcWrite(motorPWMChannel, 0);
+    delay(noteDuration * 0.1);
+  }
+  
+  // Turn off motor after playing
+  digitalWrite(MOTOR_IN1, LOW);
+  Serial.println("Finished playing Happy Birthday!");
+}
+
 void setup_wifi() {
   delay(10);
   Serial.println();
@@ -489,7 +576,10 @@ void loop() {
       Serial.println("Calibration complete.");
     } else if (calibrationComplete) {
       input.trim();
-      if (input.startsWith("o")) {
+      if (input == "birthday") {
+        // Play Happy Birthday melody
+        playHappyBirthday();
+      } else if (input.startsWith("o")) {
         if (input == "on") {
           digitalWrite(MOTOR_IN1, HIGH); // Turn on motor
           Serial.println("Motor turned ON");
