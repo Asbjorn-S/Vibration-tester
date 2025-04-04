@@ -81,6 +81,8 @@ struct frequencyData {
 };
 frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
 
+bool calibrationComplete = false; // Flag to indicate if calibration is complete
+
 void setup_wifi() {
   delay(10);
   Serial.println();
@@ -239,6 +241,66 @@ void test_frequency_v_amplitude() {
   digitalWrite(MOTOR_IN1, LOW);
   ledcWrite(motorPWMChannel, minAmplitude); // Set amplitude to minimum 
   Serial.println("Calibration complete.");
+}
+
+uint16_t frequencyToAmplitude(double targetFrequency) {
+  // Number of calibration data points
+  const uint16_t numDataPoints = ((maxAmplitude - minAmplitude) / CAL_STEP) + 1;
+  
+  // Handle out-of-range cases
+  if (targetFrequency <= 0) {
+    return 0; // Motor off
+  }
+  
+  // If target is lower than our minimum frequency, return minimum amplitude
+  if (targetFrequency < freqData[0].frequency) {
+    return freqData[0].amplitude;
+  }
+  
+  // If target is higher than our maximum frequency, return maximum amplitude
+  if (targetFrequency > freqData[numDataPoints - 1].frequency) {
+    return freqData[numDataPoints - 1].amplitude;
+  }
+  
+  // Find the two closest frequency data points
+  uint16_t lowerIndex = 0;
+  uint16_t upperIndex = 0;
+  
+  for (uint16_t i = 0; i < numDataPoints - 1; i++) {
+    if (freqData[i].frequency <= targetFrequency && 
+        freqData[i + 1].frequency >= targetFrequency) {
+      lowerIndex = i;
+      upperIndex = i + 1;
+      break;
+    }
+  }
+  
+  // Perform linear interpolation between the two closest points
+  double lowerFreq = freqData[lowerIndex].frequency;
+  double upperFreq = freqData[upperIndex].frequency;
+  uint16_t lowerAmp = freqData[lowerIndex].amplitude;
+  uint16_t upperAmp = freqData[upperIndex].amplitude;
+  
+  // Calculate the interpolated amplitude (linear interpolation)
+  double ratio = (targetFrequency - lowerFreq) / (upperFreq - lowerFreq);
+  uint16_t interpolatedAmplitude = lowerAmp + ratio * (upperAmp - lowerAmp);
+  
+  // Ensure the result is within valid range
+  if (interpolatedAmplitude > maxAmplitude) {
+    interpolatedAmplitude = maxAmplitude;
+  }
+  if (interpolatedAmplitude < minAmplitude) {
+    interpolatedAmplitude = minAmplitude;
+  }
+  
+  #ifdef DEBUG
+    Serial.print("Target frequency: ");
+    Serial.print(targetFrequency);
+    Serial.print(" Hz -> Mapped amplitude: ");
+    Serial.println(interpolatedAmplitude);
+  #endif
+  
+  return interpolatedAmplitude;
 }
 
 void run_test_sequence() {
@@ -416,13 +478,45 @@ void loop() {
   client.loop();
 
   // listen for input from serial to set target frequency for vibration motor
+  
   if (Serial.available() > 0) {
-    amplitude = Serial.parseInt();
-    if (amplitude > 1023) amplitude = 1023;
-    if (amplitude < 0) amplitude = 0;
-    ledcWrite(motorPWMChannel, amplitude);
-    Serial.print("Amplitude: "); Serial.println(amplitude);
+    String input = Serial.readStringUntil('\n');
+    if (input.startsWith("cal")) {
+      Serial.println("Starting calibration...");
+      calibrationComplete = false; // Reset calibration flag
+      test_frequency_v_amplitude(); // Call the calibration function
+      calibrationComplete = true; // Set the flag to true after calibration
+      Serial.println("Calibration complete.");
+    } else if (calibrationComplete) {
+      input.trim();
+      if (input.startsWith("o")) {
+        if (input == "on") {
+          digitalWrite(MOTOR_IN1, HIGH); // Turn on motor
+          Serial.println("Motor turned ON");
+        } else if (input == "off") {
+          digitalWrite(MOTOR_IN1, LOW); // Turn off motor
+          Serial.println("Motor turned OFF");
+        } else {
+          Serial.println("Invalid command. Use 'on' or 'off'.");
+        }
+      } else if (input.startsWith("a:")){  // Treat as direct amplitude input
+        amplitude = input.substring(2).toInt();
+        if (amplitude > 1023) amplitude = 1023;
+        if (amplitude < 0) amplitude = 0;
+        ledcWrite(motorPWMChannel, amplitude);
+        Serial.print("Amplitude: "); Serial.println(amplitude);
+      } else {
+        double targetFrequency = input.toDouble();
+        Serial.print("Setting frequency to: ");
+        Serial.print(targetFrequency);
+        Serial.println(" Hz");
+        amplitude = frequencyToAmplitude(targetFrequency);
+        ledcWrite(motorPWMChannel, amplitude);
+      }
+    } else {
+    Serial.println("Calibration not complete. Press button or type \"cal\" to start calibration.");
   }
+}
   // before starting the test sequence, calibrate the motor
   if (digitalRead(BUTTONPIN)) {
     test_frequency_v_amplitude();
