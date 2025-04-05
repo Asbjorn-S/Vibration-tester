@@ -1,19 +1,18 @@
-#include <Wire.h>
-#include <SPI.h>
-#include <Adafruit_LIS3DH.h>
-#include <Adafruit_Sensor.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <algorithm>
 #include <arduinoFFT.h>
 
+#include <global_vars.h>
+#include <accelerometers.h>
+
 #define DEBUG // Uncomment to enable debug prints
 
 // WiFi and MQTT configuration
-const char* ssid = "iOT Deco";           // Replace with your WiFi SSID
-const char* password = "bre-rule-247";   // Replace with your WiFi password
-const char* mqtt_server = "192.168.68.103"; // Replace with your MQTT broker address
+const char* ssid = "Sorensen";           // Replace with your WiFi SSID
+const char* password = "Kartoffel";   // Replace with your WiFi password
+const char* mqtt_server = "192.168.0.154"; // Replace with your MQTT broker address
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -22,20 +21,6 @@ PubSubClient client(espClient);
 #define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
 const char* vibration_data_topic = "vibration/data"; // MQTT topic to publish data
-
-// Define the pins for the LIS3DH accelerometers
-#define LIS3DH1_CS 5 // Chip select pin for first LIS3DH
-#define LIS3DH2_CS 27 // Chip select pin for second LIS3DH
-#define HSPI_SCK 14   // HSPI Clock
-#define HSPI_MISO 12  // HSPI MISO
-#define HSPI_MOSI 13  // HSPI MOSI
-SPIClass hspi(HSPI); // Use VSPI for hardware SPI
-Adafruit_LIS3DH lis1 = Adafruit_LIS3DH(LIS3DH1_CS, &SPI, 2000000); // SPI speed 2MHz
-Adafruit_LIS3DH lis2 = Adafruit_LIS3DH(LIS3DH2_CS, &hspi, 2000000); // SPI speed 2MHz
-
-// Variables for motor control and sampling
-unsigned long motor_start_time = 0;
-unsigned long previousMicros = 0;
 
 bool running_test = false;
 
@@ -51,29 +36,19 @@ const uint16_t minAmplitude = 250; // Minimum PWM amplitude
 const uint16_t maxAmplitude = 1023; // Maximum PWM amplitude
 uint16_t amplitude = 1023; // default amplitude for motor PWM
 
-// Sampling settings
-#define SAMPLE_TIME 625 // 625 microseconds = 1.6kHz [us]
-#define SAMPLE_FREQ 1000000/SAMPLE_TIME // Sampling frequency [Hz]
-#define TEST_TIME 500000 //  Time for test sequence [us]
-#define NUM_SAMPLES TEST_TIME/SAMPLE_TIME // number of samples to take
+// Variables for motor control and sampling
+unsigned long motor_start_time = 0;
+unsigned long previousMicros = 0;
 
 uint16_t nsample = 0;
 
 // FFT settings
 #define FFT_SAMPLES 1024 // Number of samples for FFT
 #define CAL_STEP 50 // Step size for calibration
+
 double vReal[FFT_SAMPLES]; // Real part of the FFT input
 double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_FREQ); // Initialize FFT object
-
-struct AccelerometerData {
-  int x;
-  int y;
-  int z;
-  unsigned long timestamp;
-};
-AccelerometerData data1[NUM_SAMPLES];
-AccelerometerData data2[NUM_SAMPLES];
 
 struct frequencyData {
   double frequency;
@@ -116,51 +91,6 @@ void reconnect() {
       delay(5000);
     }
   }
-}
-
-void accel_setup (Adafruit_LIS3DH &lis, const uint8_t id, lis3dh_range_t range = LIS3DH_RANGE_8_G, lis3dh_mode_t performance = LIS3DH_MODE_LOW_POWER ,lis3dh_dataRate_t dataRate = LIS3DH_DATARATE_LOWPOWER_1K6HZ) {
-  if (! lis.begin()) {   // change this to 0x19 for alternative i2c address (default:0x18)
-    Serial.print("Couldnt start sensor ");Serial.println(id);
-    while (1) yield();
-  }
-  Serial.print("LIS3DH ");Serial.print(id);Serial.println(" found!");
-
-  lis.setRange(range);   // 2, 4, 8 or 16 G!
-  lis.setPerformanceMode(performance); // normal, low power, or high res
-  lis.setDataRate(dataRate); // 1, 10, 25, 50, 100, 200, 400, 1600, 5000 Hz
-  Serial.print("Range: "); Serial.println(lis.getRange());
-  Serial.print("Performance Mode: "); Serial.println(lis.getPerformanceMode());
-  Serial.print("Data Rate: "); Serial.println(lis.getDataRate());
-}
-
-AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
-  AccelerometerData tmp = {0, 0, 0, ts}; // initialize to 0
-  //return raw value of acceleration in 8 bit value
-  lis.read();
-
-  #ifdef DEBUG
-    //  Print raw accelerometer values
-    // Serial.print("Raw X: "); Serial.print(lis.x);
-    // Serial.print(" Y: "); Serial.print(lis.y);
-    // Serial.print(" Z: "); Serial.println(lis.z);
-  #endif
-
-  // Assign the read values to the struct
-  tmp.x = lis.x;
-  tmp.y = lis.y;
-  tmp.z = lis.z;
-  tmp.timestamp = ts;
-  return tmp;
-}
-
-void print_accelerometer_data(const AccelerometerData* data, uint16_t num_samples) {
-  for (size_t i = 0; i < num_samples; i++) {
-    Serial.print("Timestamp: "); Serial.print(data[i].timestamp); Serial.print(" us\t");
-    Serial.print("X: "); Serial.print(data[i].x); Serial.print("\t");
-    Serial.print("Y: "); Serial.print(data[i].y); Serial.print("\t");
-    Serial.print("Z: "); Serial.print(data[i].z); Serial.println();
-  }
-  Serial.println("===================================");
 }
 
 void test_frequency_v_amplitude() {
@@ -241,6 +171,7 @@ void test_frequency_v_amplitude() {
   digitalWrite(MOTOR_IN1, LOW);
   ledcWrite(motorPWMChannel, minAmplitude); // Set amplitude to minimum 
   Serial.println("Calibration complete.");
+  calibrationComplete = true;
 }
 
 uint16_t frequencyToAmplitude(double targetFrequency) {
@@ -485,7 +416,6 @@ void loop() {
       Serial.println("Starting calibration...");
       calibrationComplete = false; // Reset calibration flag
       test_frequency_v_amplitude(); // Call the calibration function
-      calibrationComplete = true; // Set the flag to true after calibration
       Serial.println("Calibration complete.");
     } else if (calibrationComplete) {
       input.trim();
