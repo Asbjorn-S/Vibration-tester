@@ -3,9 +3,6 @@
 #include <global_vars.h>
 #include <arduinoFFT.h>
 
-#define motorPWMFreq 5000
-#define motorPWMChannel 0
-
 // FFT settings
 #define FFT_SAMPLES 1024 // Number of samples for FFT
 #define CAL_STEP 100 // Step size for calibration

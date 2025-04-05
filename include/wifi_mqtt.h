@@ -15,6 +15,10 @@
 extern WiFiClient espClient;
 extern PubSubClient client;
 
+void publishData(uint16_t nsample);
+
+void callback(char *topic, byte *message, unsigned int length);
+
 void setup_wifi();
 
 void reconnect();

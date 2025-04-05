@@ -1,7 +1,6 @@
 #include <accelerometers.h>
 #include <SPI.h>
 #include <Adafruit_Sensor.h>
-
 #include <global_vars.h>
 
 Adafruit_LIS3DH lis1 = Adafruit_LIS3DH(LIS3DH1_CS, &SPI, 2000000); // SPI speed 2MHz

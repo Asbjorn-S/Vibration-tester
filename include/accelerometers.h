@@ -14,16 +14,6 @@ extern SPIClass hspi; // Use HSPI for second accelerometer
 extern Adafruit_LIS3DH lis1; // VSPI
 extern Adafruit_LIS3DH lis2; // HSPI speed 2MHz
 
-struct AccelerometerData {
-    int x;
-    int y;
-    int z;
-    unsigned long timestamp;
-};
-extern AccelerometerData data1[NUM_SAMPLES];
-extern AccelerometerData data2[NUM_SAMPLES];
-
-
 
 void accel_setup(Adafruit_LIS3DH &lis, const uint8_t id, lis3dh_range_t range = LIS3DH_RANGE_8_G, lis3dh_mode_t performance = LIS3DH_MODE_LOW_POWER ,lis3dh_dataRate_t dataRate = LIS3DH_DATARATE_LOWPOWER_1K6HZ);
 
