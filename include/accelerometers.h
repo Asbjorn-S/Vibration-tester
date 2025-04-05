@@ -10,9 +10,9 @@
 #define HSPI_MISO 12  // HSPI MISO
 #define HSPI_MOSI 13  // HSPI MOSI
 
-extern SPIClass hspi; // Use VSPI for hardware SPI
-extern Adafruit_LIS3DH lis1; // SPI speed 2MHz
-extern Adafruit_LIS3DH lis2; // SPI speed 2MHz
+extern SPIClass hspi; // Use HSPI for second accelerometer
+extern Adafruit_LIS3DH lis1; // VSPI
+extern Adafruit_LIS3DH lis2; // HSPI speed 2MHz
 
 struct AccelerometerData {
     int x;
