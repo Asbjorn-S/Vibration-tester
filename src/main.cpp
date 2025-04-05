@@ -1,28 +1,17 @@
-#include <WiFi.h>
-#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <global_vars.h>
+#include <wifi_mqtt.h>
 #include <accelerometers.h>
 #include <calibration.h>
 
+
 #define DEBUG // Uncomment to enable debug prints
 
-// WiFi and MQTT configuration
-const char* ssid = "Sorensen";           // Replace with your WiFi SSID
-const char* password = "Kartoffel";   // Replace with your WiFi password
-const char* mqtt_server = "192.168.0.154"; // Replace with your MQTT broker address
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-#define MQTT_MAX_PACKET_SIZE 4096  // Increase this value based on your payload size
-#define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
-
-const char* vibration_data_topic = "vibration/data"; // MQTT topic to publish data
-
+// global variables and constants for the project
 uint16_t amplitude = 1023; // default amplitude for motor PWM
-
 bool calibrationComplete = false; // Flag to indicate if calibration is complete
+
+#define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
 bool running_test = false;
 
@@ -31,43 +20,6 @@ unsigned long motor_start_time = 0;
 unsigned long previousMicros = 0;
 
 uint16_t nsample = 0;
-
-
-
-void setup_wifi() {
-  delay(10);
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println();
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-}
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if (client.connect("VibrationClient")) {
-      Serial.println("connected");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      delay(5000);
-    }
-  }
-}
 
 void run_test_sequence() {
   if (digitalRead(BUTTONPIN) || running_test) {
@@ -209,7 +161,7 @@ void setup(void) {
 
   // Set up MQTT
   client.setBufferSize(MQTT_MAX_PACKET_SIZE);
-  client.setServer(mqtt_server, 1883);
+  client.setServer(MQTT_SERVER, 1883);
   client.setKeepAlive(60); // Set keep-alive interval to 60 seconds
 
   // Test simple MQTT publish after connection
