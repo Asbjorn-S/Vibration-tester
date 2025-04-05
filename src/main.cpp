@@ -65,8 +65,8 @@ void run_test_sequence() {
         
         #ifdef DEBUG
           // Print the current chunk size and free heap memory
-          Serial.print("Free heap: ");
-          Serial.println(ESP.getFreeHeap());
+          // Serial.print("Free heap: ");
+          // Serial.println(ESP.getFreeHeap());
         #endif
 
         uint16_t end = std::min<uint16_t>(start + chunkSize, nsample);
@@ -139,12 +139,12 @@ void run_test_sequence() {
         }
         #ifdef DEBUG
           //  Print the serialized JSON, its size and free heap memory
-          Serial.print("Serialized JSON size: ");
-          Serial.println(jsonSize);
-          Serial.print("Serialized JSON: ");
-          Serial.println(jsonBuffer);
-          Serial.print("Free heap: ");
-          Serial.println(ESP.getFreeHeap());
+          // Serial.print("Serialized JSON size: ");
+          // Serial.println(jsonSize);
+          // Serial.print("Serialized JSON: ");
+          // Serial.println(jsonBuffer);
+          // Serial.print("Free heap: ");
+          // Serial.println(ESP.getFreeHeap());
         #endif
       }
     }

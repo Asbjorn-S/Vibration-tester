@@ -8,7 +8,7 @@
 
 // FFT settings
 #define FFT_SAMPLES 1024 // Number of samples for FFT
-#define CAL_STEP 50 // Step size for calibration
+#define CAL_STEP 100 // Step size for calibration
 
 extern double vReal[FFT_SAMPLES]; // Real part of the FFT input
 extern double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
