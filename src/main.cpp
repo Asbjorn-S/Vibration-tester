@@ -166,13 +166,7 @@ void setup(void) {
 
   // Test simple MQTT publish after connection
   if (client.connect("VibrationClientTest")) {
-    Serial.println("Testing MQTT connection with small message...");
-    bool testSuccess = client.publish("vibration/test", "Hello World");
-    if (testSuccess) {
-      Serial.println("Test message published successfully!");
-    } else {
-      Serial.println("Failed to publish test message. Check broker configuration.");
-    }
+    client.publish("vibration/calibration/status", "incomplete");
   }
 
   accel_setup(lis1, 1);
@@ -203,6 +197,7 @@ void loop() {
       Serial.println("Starting calibration...");
       calibrationComplete = false; // Reset calibration flag
       test_frequency_v_amplitude(); // Call the calibration function
+      publishCalibrationData(); // Publish calibration data to MQTT
       Serial.println("Calibration complete.");
     } else if (calibrationComplete) {
       input.trim();
@@ -237,6 +232,7 @@ void loop() {
   // before starting the test sequence, calibrate the motor
   if (digitalRead(BUTTONPIN)) {
     test_frequency_v_amplitude();
+    publishCalibrationData(); // Publish calibration data to MQTT
     // Print frequency data for debugging
     #ifdef DEBUG
       Serial.println("Frequency data:");

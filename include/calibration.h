@@ -22,4 +22,6 @@ extern frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
 
 void test_frequency_v_amplitude();
 
+void publishCalibrationData();
+
 uint16_t frequencyToAmplitude(double targetFrequency);

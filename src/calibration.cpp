@@ -1,6 +1,8 @@
 #include <calibration.h>
 #include <accelerometers.h>
 #include <algorithm>
+#include <wifi_mqtt.h>
+#include <ArduinoJson.h>
 
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_FREQ); // Initialize FFT object
 
@@ -8,6 +10,7 @@ double vReal[FFT_SAMPLES]; // Real part of the FFT input
 double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
 frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
 
+extern PubSubClient client; // MQTT client object
 
 void test_frequency_v_amplitude() {
     // Placeholder for motor calibration logic
@@ -30,7 +33,7 @@ void test_frequency_v_amplitude() {
       // Set motor amplitude
       ledcWrite(motorPWMChannel, amplitude);
       // Wait for the motor to stabilize
-      delay(100); // Wait for 100 ms to stabilize
+      delay(200); // Wait for 200 ms to stabilize
   
       // Measure frequency
       unsigned long startTime = millis();
@@ -86,8 +89,41 @@ void test_frequency_v_amplitude() {
     // Turn off the motor after calibration
     digitalWrite(MOTOR_IN1, LOW);
     ledcWrite(motorPWMChannel, minAmplitude); // Set amplitude to minimum 
-    Serial.println("Calibration complete.");
+    // Serial.println("Calibration complete.");
     calibrationComplete = true;
+  }
+
+  //publish the frequency data to MQTT broker
+  void publishCalibrationData() {
+    if (!calibrationComplete) {
+      Serial.println("Cannot publish: Calibration not complete");
+      return;
+    }
+    
+    const uint16_t numDataPoints = ((maxAmplitude - minAmplitude) / CAL_STEP) + 1;
+    
+    // Publish overall calibration status
+    client.publish("vibration/calibration/status", "complete");
+    
+    // Create and publish JSON object with all calibration points
+    DynamicJsonDocument doc(1024); // Adjust size as needed
+    JsonArray dataArray = doc.createNestedArray("calibration_data");
+    
+    for (uint16_t i = 0; i < numDataPoints; i++) {
+      JsonObject dataPoint = dataArray.createNestedObject();
+      dataPoint["amplitude"] = freqData[i].amplitude;
+      dataPoint["frequency"] = freqData[i].frequency;
+    }
+    
+    // Convert to JSON string
+    String jsonOutput;
+    size_t jsonSize = serializeJson(doc, jsonOutput);
+    
+    // Publish full dataset
+    client.publish("vibration/calibration/data", jsonOutput.c_str());
+    
+    Serial.print("Calibration data published to MQTT: ");Serial.println(jsonSize);
+
   }
   
   uint16_t frequencyToAmplitude(double targetFrequency) {
