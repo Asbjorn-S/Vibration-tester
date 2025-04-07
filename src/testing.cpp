@@ -4,11 +4,12 @@
 #include <accelerometers.h>
 #include <ArduinoJson.h>
 #include <wifi_mqtt.h>
+#include <calibration.h>
 
-void run_test(uint16_t amplitude) {
-    Serial.println("Starting test sequence with amplitude " + String(amplitude));
+void run_test(double frequency) {
+    Serial.println("Starting test sequence with frequency " + String(frequency));
     // Start motor
-    ledcWrite(motorPWMChannel, amplitude); // Set motor amplitude
+    ledcWrite(motorPWMChannel, frequencyToAmplitude(frequency)); // Set motor amplitude
     digitalWrite(MOTOR_IN1, HIGH);
 
     uint16_t nsample = 0;
@@ -27,7 +28,7 @@ void run_test(uint16_t amplitude) {
         } else {
             Serial.println("Max samples reached, stopping test");
             digitalWrite(MOTOR_IN1, LOW);
-            publishData(nsample);
+            publishData(nsample, frequency);
             break;
         }
       }

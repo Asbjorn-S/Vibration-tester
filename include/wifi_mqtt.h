@@ -15,7 +15,7 @@
 extern WiFiClient espClient;
 extern PubSubClient client;
 
-void publishData(uint16_t nsample);
+void publishData(uint16_t nsample, double frequency);
 
 void callback(char *topic, byte *message, unsigned int length);
 

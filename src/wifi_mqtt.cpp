@@ -11,9 +11,31 @@ PubSubClient client(espClient);
 
 #define JSON_BUFFER_SIZE 4096 // Adjust size based on your needs
 
-void publishData(uint16_t nsample) {
+void publishData(uint16_t nsample, double frequency) {
     // Serialize and publish the dataset in chunks
     const size_t chunkSize = 30; // Number of samples per chunk
+
+    DynamicJsonDocument metaDoc(1024);
+    metaDoc["type"] = "metadata";
+    metaDoc["sampleCount"] = nsample;
+    metaDoc["frequency"] = frequency;
+    metaDoc["sampleTime"] = SAMPLE_TIME;
+    
+    char metaBuffer[1024];
+    size_t metaSize = serializeJson(metaDoc, metaBuffer, sizeof(metaBuffer));
+    
+    if (metaSize > 0 && client.connected()) {
+        bool metaSuccess = client.publish("vibration/metadata", metaBuffer);
+        if (metaSuccess) {
+            #ifdef DEBUG
+                Serial.println("Test metadata published successfully");
+            #endif
+        } else {
+            Serial.println("Failed to publish test metadata");
+        }
+    }
+
+    // Publish the accelerometer data in chunks
     for (uint16_t start = 0; start < nsample; start += chunkSize) {
         #ifdef DEBUG
             // Print the current chunk size and free heap memory
@@ -121,7 +143,7 @@ void callback(char* topic, byte* message, unsigned int length) {
       if (String(topic) == "vibration/test") {
           Serial.println("Topic received: " + String(topic));
           uint16_t frequency = messageTemp.toInt();
-          run_test(frequencyToAmplitude(frequency)); // Call the test function with the frequency value
+          run_test(frequency); // Call the test function with the frequency value
       } else if (String(topic) == "vibration/frequency") {
           Serial.println("Topic received: " + String(topic));
           double targetFrequency = messageTemp.toDouble();
