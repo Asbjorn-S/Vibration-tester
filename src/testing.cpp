@@ -34,6 +34,5 @@ void run_test(double frequency) {
       }
     }
     // Stop motor after the test
-    
 }
   
