@@ -11,7 +11,7 @@
 #define motorPWMChannel 0
 
 // Motor PWM settings
-const uint16_t minAmplitude = 250; // Minimum PWM amplitude
+const uint16_t minAmplitude = 300; // Minimum PWM amplitude
 const uint16_t maxAmplitude = 1023; // Maximum PWM amplitude
 
 // Sampling settings
