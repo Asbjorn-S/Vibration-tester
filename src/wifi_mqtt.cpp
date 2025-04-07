@@ -82,8 +82,6 @@ void publishData(uint16_t nsample) {
         
         // Small delay between publishing chunks to avoid flooding the broker
         delay(100);
-      } else {
-        Serial.println("Failed to serialize JSON chunk.");
       }
       #ifdef DEBUG
           //  Print the serialized JSON, its size and free heap memory
@@ -94,7 +92,6 @@ void publishData(uint16_t nsample) {
           // Serial.print("Free heap: ");
           // Serial.println(ESP.getFreeHeap());
       #endif
-  }
 }
 
 void callback(char* topic, byte* message, unsigned int length) {
@@ -109,52 +106,51 @@ void callback(char* topic, byte* message, unsigned int length) {
     }
     Serial.println();
 
-    if (!calibrationComplete) {
-        if (String(topic) == "vibration/calibration") {
-            if (messageTemp == "start") {
-                Serial.println("Starting calibration...");
-                calibrationComplete = false; // Reset calibration flag
-                test_frequency_v_amplitude(); // Call the calibration function
-                publishCalibrationData(); // Publish calibration data to MQTT
-                Serial.println("Calibration complete.");
-            } else {
-                Serial.println("Unknown command. Use 'start'");
-            }
+    if (String(topic) == "vibration/calibration") {
+        if (messageTemp == "start") {
+            Serial.println("Starting calibration...");
+            calibrationComplete = false; // Reset calibration flag
+            test_frequency_v_amplitude(); // Call the calibration function
+            publishCalibrationData(); // Publish calibration data to MQTT
+            Serial.println("Calibration complete.");
         } else {
-            Serial.println("Calibration not complete.");
-            client.publish("vibration/calibration/status", "incomplete");
-            return;
+            Serial.println("Unknown command. Use 'start'");
         }
-    }
-    if (String(topic) == "vibration/test") {
-        Serial.println("Topic received: " + String(topic));
-        uint16_t frequency = messageTemp.toInt();
-        run_test(frequencyToAmplitude(frequency)); // Call the test function with the frequency value
-    } else if (String(topic) == "vibration/frequency") {
-        Serial.println("Topic received: " + String(topic));
-        double targetFrequency = messageTemp.toDouble();
-        Serial.print("Setting frequency to: ");
-        Serial.print(targetFrequency);
-        Serial.println(" Hz");
-        uint16_t amplitude = frequencyToAmplitude(targetFrequency);
-        ledcWrite(motorPWMChannel, amplitude);
-    } else if (String(topic) == "vibration/amplitude") {
-        Serial.println("Topic received: " + String(topic));
-        uint16_t amplitude = messageTemp.toInt();
-        ledcWrite(motorPWMChannel, amplitude);
-    } else if (String(topic) == "vibration/motor") { 
-        Serial.println("Topic received: " + String(topic));
-        if (messageTemp == "on") {
-            digitalWrite(MOTOR_IN1, HIGH); // Turn on motor
-            Serial.println("Motor turned ON");
-        } else if (messageTemp == "off") {
-            digitalWrite(MOTOR_IN1, LOW); // Turn off motor
-            Serial.println("Motor turned OFF");
-        } else {
-            Serial.println("Invalid command. Use 'on' or 'off'.");
-        }
+      }
+    if (calibrationComplete) {
+      if (String(topic) == "vibration/test") {
+          Serial.println("Topic received: " + String(topic));
+          uint16_t frequency = messageTemp.toInt();
+          run_test(frequencyToAmplitude(frequency)); // Call the test function with the frequency value
+      } else if (String(topic) == "vibration/frequency") {
+          Serial.println("Topic received: " + String(topic));
+          double targetFrequency = messageTemp.toDouble();
+          Serial.print("Setting frequency to: ");
+          Serial.print(targetFrequency);
+          Serial.println(" Hz");
+          uint16_t amplitude = frequencyToAmplitude(targetFrequency);
+          ledcWrite(motorPWMChannel, amplitude);
+      } else if (String(topic) == "vibration/amplitude") {
+          Serial.println("Topic received: " + String(topic));
+          uint16_t amplitude = messageTemp.toInt();
+          ledcWrite(motorPWMChannel, amplitude);
+      } else if (String(topic) == "vibration/motor") { 
+          Serial.println("Topic received: " + String(topic));
+          if (messageTemp == "on") {
+              digitalWrite(MOTOR_IN1, HIGH); // Turn on motor
+              Serial.println("Motor turned ON");
+          } else if (messageTemp == "off") {
+              digitalWrite(MOTOR_IN1, LOW); // Turn off motor
+              Serial.println("Motor turned OFF");
+          } else {
+              Serial.println("Invalid command. Use 'on' or 'off'.");
+          }
+      } else {
+        Serial.println("Unknown topic. No action taken.");
+      }
     } else {
-      Serial.println("Unknown topic. No action taken.");
+        Serial.println("Calibration not complete. No action taken.");
+        client.publish("vibration/calibration/status", "incomplete");
     }
   }
 
