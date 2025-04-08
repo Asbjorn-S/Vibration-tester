@@ -13,7 +13,7 @@ PubSubClient client(espClient);
 
 void publishData(uint16_t nsample, double frequency) {
     // Serialize and publish the dataset in chunks
-    const size_t chunkSize = 30; // Number of samples per chunk
+    const size_t chunkSize = 25; // Number of samples per chunk
 
     DynamicJsonDocument metaDoc(1024);
     metaDoc["type"] = "metadata";

@@ -24,9 +24,9 @@ extern bool calibrationComplete; // Flag to indicate if calibration is complete
 
 // Accelerometer data structure
 struct AccelerometerData {
-    int x;
-    int y;
-    int z;
+    float x;
+    float y;
+    float z;
     unsigned long timestamp;
 };
 extern AccelerometerData data1[NUM_SAMPLES];

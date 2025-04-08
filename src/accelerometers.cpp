@@ -39,9 +39,11 @@ AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
     #endif
   
     // Assign the read values to the struct
-    tmp.x = lis.x;
-    tmp.y = lis.y;
-    tmp.z = lis.z;
+    sensors_event_t event;
+    lis.getEvent(&event); // get the latest sensor event
+    tmp.x = event.acceleration.x;
+    tmp.y = event.acceleration.y;
+    tmp.z = event.acceleration.z;
     tmp.timestamp = ts;
     return tmp;
 }

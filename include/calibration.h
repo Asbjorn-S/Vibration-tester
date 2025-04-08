@@ -12,7 +12,7 @@ extern double vImag[FFT_SAMPLES]; // Imaginary part of the FFT input
 extern ArduinoFFT<double> FFT; // Initialize FFT object
 
 struct frequencyData {
-  double frequency;
+  float frequency;
   uint16_t amplitude;
 };
 extern frequencyData freqData[(maxAmplitude-minAmplitude)/CAL_STEP+2];
@@ -21,4 +21,4 @@ void test_frequency_v_amplitude();
 
 void publishCalibrationData();
 
-uint16_t frequencyToAmplitude(double targetFrequency);
+uint16_t frequencyToAmplitude(float targetFrequency);

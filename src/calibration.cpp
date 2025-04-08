@@ -126,7 +126,7 @@ void test_frequency_v_amplitude() {
 
   }
   
-  uint16_t frequencyToAmplitude(double targetFrequency) {
+  uint16_t frequencyToAmplitude(float targetFrequency) {
     // Number of calibration data points
     const uint16_t numDataPoints = ((maxAmplitude - minAmplitude) / CAL_STEP) + 1;
     
@@ -159,13 +159,13 @@ void test_frequency_v_amplitude() {
     }
     
     // Perform linear interpolation between the two closest points
-    double lowerFreq = freqData[lowerIndex].frequency;
-    double upperFreq = freqData[upperIndex].frequency;
+    float lowerFreq = freqData[lowerIndex].frequency;
+    float upperFreq = freqData[upperIndex].frequency;
     uint16_t lowerAmp = freqData[lowerIndex].amplitude;
     uint16_t upperAmp = freqData[upperIndex].amplitude;
     
     // Calculate the interpolated amplitude (linear interpolation)
-    double ratio = (targetFrequency - lowerFreq) / (upperFreq - lowerFreq);
+    float ratio = (targetFrequency - lowerFreq) / (upperFreq - lowerFreq);
     uint16_t interpolatedAmplitude = lowerAmp + ratio * (upperAmp - lowerAmp);
     
     // Ensure the result is within valid range
