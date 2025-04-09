@@ -176,6 +176,7 @@ def listen_for_commands(client):
         print("7. plot [filename] - Plot vibration data (most recent if no filename specified)")
         print("8. gain [filename] - Calculate gain between accelerometers (most recent if no filename specified)")
         print("9. exit - Exit the program")
+        print("10. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
     
     # Show commands at startup
     display_help()
@@ -272,6 +273,20 @@ def listen_for_commands(client):
                     # No filename specified, use most recent
                     print("Calculating gain from most recent data...")
                     calculate_accelerometer_gain()
+                    
+            elif command.startswith("phase"):
+                parts = command.split()
+                if len(parts) > 1:
+                    filename = ' '.join(parts[1:])
+                    if not os.path.isabs(filename):
+                        dir_prefix = 'accelerometerplotter_json/'
+                        if not filename.lower().startswith(dir_prefix.lower()):
+                            filename = f'Accelerometerplotter_JSON/{filename}'
+                    print(f"Calculating phase delay from file: {filename}")
+                    calculate_phase_delay(filename)
+                else:
+                    print("Calculating phase delay from most recent data...")
+                    calculate_phase_delay()
                 
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
@@ -714,6 +729,128 @@ def calculate_accelerometer_gain(json_file=None):
     # print(f"Z-axis gain (accel2/accel1): {gain_z:.4f}")
     
     return (gain_x, gain_y, frequency)
+
+
+def calculate_phase_delay(json_file=None):
+    """
+    Calculate the phase delay between accelerometer 1 and accelerometer 2 signals.
+    If no file is specified, uses the most recent file in the data directory.
+    
+    Args:
+        json_file (str, optional): Path to the JSON file containing vibration data
+        
+    Returns:
+        dict: Dictionary containing phase delays for each axis in degrees and time
+    """
+    
+    # If no file specified, find the most recent one
+    if (json_file is None):
+        data_dir = 'Accelerometerplotter_JSON'
+        files = glob.glob(f"{data_dir}/vibration_*.json")
+        if not files:
+            print("No vibration data files found")
+            return None
+        
+        # Sort by modification time (most recent last)
+        files.sort(key=os.path.getmtime)
+        json_file = files[-1]
+        print(f"Using most recent data file: {json_file}")
+    
+    # Load the data
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading data file: {e}")
+        return None
+    
+    # Extract data from accelerometers
+    accel1 = data.get("accelerometer1", [])
+    accel2 = data.get("accelerometer2", [])
+    
+    if not accel1 or not accel2:
+        print("No accelerometer data found in file")
+        return None
+    
+    # Extract metadata
+    metadata = data.get("metadata", {})
+    frequency = metadata.get("frequency", 0)
+    sample_time_us = metadata.get("sample_time_us", 0)
+    
+    if sample_time_us == 0:
+        print("Warning: Sample time is zero or missing in metadata")
+        sample_time_s = 1.0  # Default to 1 second if metadata is invalid
+    else:
+        sample_time_s = sample_time_us / 1_000_000  # Convert to seconds
+    
+    # Extract x, y values 
+    x1 = np.array([sample["x"] for sample in accel1])
+    y1 = np.array([sample["y"] for sample in accel1])
+    
+    x2 = np.array([sample["x"] for sample in accel2])
+    y2 = np.array([sample["y"] for sample in accel2])
+    
+    # Calculate phase delay using cross-correlation
+    def calculate_delay(signal1, signal2):
+        # Normalize signals to improve correlation accuracy
+        sig1_norm = (signal1 - np.mean(signal1)) / (np.std(signal1) if np.std(signal1) != 0 else 1)
+        sig2_norm = (signal2 - np.mean(signal2)) / (np.std(signal2) if np.std(signal2) != 0 else 1)
+        
+        # Calculate cross-correlation
+        correlation = np.correlate(sig1_norm, sig2_norm, mode='full')
+        
+        # Find the index of maximum correlation
+        max_corr_idx = np.argmax(correlation)
+        
+        # Calculate the delay in samples
+        delay_samples = max_corr_idx - (len(signal1) - 1)
+        
+        # Convert to time delay
+        time_delay = delay_samples * sample_time_s
+        
+        # Calculate phase delay in degrees if frequency is available
+        if frequency > 0:
+            # One full cycle at the given frequency
+            cycle_time = 1.0 / frequency
+            # Convert time delay to fraction of cycle
+            phase_fraction = (time_delay / cycle_time) % 1.0
+            # Convert to degrees (0-360)
+            phase_degrees = phase_fraction * 360
+        else:
+            phase_degrees = None
+            
+        return {
+            "delay_samples": delay_samples,
+            "time_delay": time_delay,
+            "phase_degrees": phase_degrees
+        }
+    
+    # Calculate delays for each axis
+    x_delay = calculate_delay(x1, x2)
+    y_delay = calculate_delay(y1, y2)
+    
+    # Print results
+    print(f"\nPhase Delay Analysis for {os.path.basename(json_file)}:")
+    print(f"Test frequency: {frequency} Hz")
+    
+    print(f"\nX-axis:")
+    print(f"  Time delay: {x_delay['time_delay']*1000:.2f} ms")
+    if x_delay['phase_degrees'] is not None:
+        print(f"  Phase delay: {x_delay['phase_degrees']:.2f}°")
+    
+    print(f"\nY-axis:")
+    print(f"  Time delay: {y_delay['time_delay']*1000:.2f} ms")
+    if y_delay['phase_degrees'] is not None:
+        print(f"  Phase delay: {y_delay['phase_degrees']:.2f}°")
+    
+    # Return a dictionary with all results
+    results = {
+        "frequency": frequency,
+        "x_axis": x_delay,
+        "y_axis": y_delay,
+    }
+    
+    return results
 
 
 def main():
