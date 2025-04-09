@@ -40,7 +40,7 @@ void test_frequency_v_amplitude() {
       uint16_t sampleIndex = 0;
       while (sampleIndex < FFT_SAMPLES) {
         unsigned long timestamp = micros();
-        AccelerometerData sample = sample_accelerometer(lis1, timestamp);
+        AccelerometerData sample = sample_accelerometer(lis1);
   
         // Store the accelerometer's X-axis data in the FFT input array
         vReal[sampleIndex] = sample.x; // Magnitude of acceleration vector

@@ -22,8 +22,8 @@ void run_test(double frequency) {
         previousMicros += SAMPLE_TIME; // increment by sample time to avoid drift
         if (nsample < NUM_SAMPLES) {
             // Sample accelerometer data
-            data1[nsample] = sample_accelerometer(lis1, timestamp);
-            data2[nsample] = sample_accelerometer(lis2, timestamp);
+            data1[nsample] = sample_accelerometer(lis1);
+            data2[nsample] = sample_accelerometer(lis2);
             nsample++;
         } else {
             Serial.println("Max samples reached, stopping test");

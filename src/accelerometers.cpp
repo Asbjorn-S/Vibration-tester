@@ -26,8 +26,8 @@ void accel_setup (Adafruit_LIS3DH &lis, const uint8_t id, lis3dh_range_t range,
     Serial.print("Data Rate: "); Serial.println(lis.getDataRate());
 }
   
-AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
-    AccelerometerData tmp = {0, 0, ts}; // initialize to 0
+AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis) {
+    AccelerometerData tmp = {0, 0, 0}; // initialize to 0
     lis.read();
   
     #ifdef DEBUG
@@ -43,7 +43,7 @@ AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
     tmp.x = event.acceleration.x;
     tmp.y = event.acceleration.y;
     // tmp.z = event.acceleration.z;
-    tmp.timestamp = ts;
+    tmp.timestamp = micros();
     return tmp;
 }
 
