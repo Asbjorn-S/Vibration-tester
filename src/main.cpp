@@ -22,7 +22,7 @@ void setup(void) {
   client.setCallback(callback);
   client.setKeepAlive(60); // Set keep-alive interval to 60 seconds
 
-  accel_setup(lis1, 1);
+  accel_setup(lis1, 1, LIS3DH_RANGE_16_G);
   accel_setup(lis2, 2);
 
   pinMode(BUTTONPIN, INPUT_PULLDOWN); // button to trigger motor

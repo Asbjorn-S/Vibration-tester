@@ -377,6 +377,7 @@ def on_message(client, userdata, msg):
                         print(f"Complete dataset saved to {output_file}, ready for analysis")
                         # Plot the vibration data automatically
                         plot_vibration_data(output_file)
+                        calculate_accelerometer_gain(output_file)
                 else:
                     print("Received single data message")
                     # Handle single message if needed
@@ -717,7 +718,7 @@ def calculate_accelerometer_gain(json_file=None):
 def main():
     import sys
     # Set up MQTT connection to broker
-    client = connect_mqtt(broker_address="192.168.68.128", port=1883, 
+    client = connect_mqtt(broker_address="192.168.68.126", port=1883, 
                          client_id="AccelerometerPlotter", 
                          keepalive=15)  # Reduced keepalive time
 
@@ -739,7 +740,7 @@ def main():
                 # Send heartbeat every 10 seconds
                 if current_time - last_heartbeat > heartbeat_interval:
                     if client.is_connected():
-                        print("Sending heartbeat...")
+                        # print("Sending heartbeat...")
                         client.publish("vibration/heartbeat", str(current_time), qos=1)
                         last_heartbeat = current_time
                     else:
