@@ -299,7 +299,7 @@ def on_message(client, userdata, msg):
         topic = msg.topic
         payload = msg.payload.decode('utf-8')
         
-        print(f"Message received on topic: {topic}")
+        # print(f"Message received on topic: {topic}")
         
         # Handle messages based on topic
         if topic == "vibration/calibration/status":
@@ -360,14 +360,14 @@ def on_message(client, userdata, msg):
                 if "chunk" in data and "totalChunks" in data:
                     chunk_num = data["chunk"]
                     total_chunks = data["totalChunks"]
-                    print(f"Received data chunk {chunk_num}/{total_chunks}")
+                    # print(f"Received data chunk {chunk_num}/{total_chunks}")
                     
                     # Process accelerometer data
                     accel1_data = data.get("accelerometer1", [])
                     accel2_data = data.get("accelerometer2", [])
                     
-                    print(f"  Accelerometer 1: {len(accel1_data)} samples")
-                    print(f"  Accelerometer 2: {len(accel2_data)} samples")
+                    # print(f"  Accelerometer 1: {len(accel1_data)} samples")
+                    # print(f"  Accelerometer 2: {len(accel2_data)} samples")
                     
                     # Process and store the chunked data
                     output_file = process_vibration_data(data, chunk_num, total_chunks)
@@ -414,7 +414,7 @@ def process_vibration_data(data, chunk_num, total_chunks):
     with open(chunk_file, 'w') as f:
         json.dump(data, f)
     
-    print(f"Saved chunk {chunk_num}/{total_chunks} to temporary file")
+    # print(f"Saved chunk {chunk_num}/{total_chunks} to temporary file")
     
     # Check if we have all chunks
     if chunk_num == total_chunks:
