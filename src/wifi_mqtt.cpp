@@ -51,12 +51,12 @@ void publishData(uint16_t nsample, double frequency) {
           JsonObject sample1Obj = accel1Array.createNestedObject();
           sample1Obj["x"] = data1[i].x;
           sample1Obj["y"] = data1[i].y;
-          sample1Obj["z"] = data1[i].z;
+          // sample1Obj["z"] = data1[i].z;
           sample1Obj["timestamp"] = data1[i].timestamp;
           JsonObject sample2Obj = accel2Array.createNestedObject();
           sample2Obj["x"] = data2[i].x;
           sample2Obj["y"] = data2[i].y;
-          sample2Obj["z"] = data2[i].z;
+          // sample2Obj["z"] = data2[i].z;
           sample2Obj["timestamp"] = data2[i].timestamp;
         }
         // Add chunk information

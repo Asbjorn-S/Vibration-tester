@@ -17,7 +17,7 @@ const uint16_t maxAmplitude = 1023; // Maximum PWM amplitude
 // Sampling settings
 #define SAMPLE_TIME 625 // 625 microseconds = 1.6kHz [us]
 #define SAMPLE_FREQ 1000000/SAMPLE_TIME // Sampling frequency [Hz]
-#define TEST_TIME 1000000 //  Time for test sequence [us]
+#define TEST_TIME 500000 //  Time for test sequence [us]
 #define NUM_SAMPLES TEST_TIME/SAMPLE_TIME // number of samples to take
 
 extern bool calibrationComplete; // Flag to indicate if calibration is complete
@@ -26,7 +26,7 @@ extern bool calibrationComplete; // Flag to indicate if calibration is complete
 struct AccelerometerData {
     float x;
     float y;
-    float z;
+    // float z;
     unsigned long timestamp;
 };
 extern AccelerometerData data1[NUM_SAMPLES];

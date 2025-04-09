@@ -27,8 +27,7 @@ void accel_setup (Adafruit_LIS3DH &lis, const uint8_t id, lis3dh_range_t range,
 }
   
 AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
-    AccelerometerData tmp = {0, 0, 0, ts}; // initialize to 0
-    //return raw value of acceleration in 8 bit value
+    AccelerometerData tmp = {0, 0, ts}; // initialize to 0
     lis.read();
   
     #ifdef DEBUG
@@ -43,7 +42,7 @@ AccelerometerData sample_accelerometer(Adafruit_LIS3DH &lis, unsigned long ts) {
     lis.getEvent(&event); // get the latest sensor event
     tmp.x = event.acceleration.x;
     tmp.y = event.acceleration.y;
-    tmp.z = event.acceleration.z;
+    // tmp.z = event.acceleration.z;
     tmp.timestamp = ts;
     return tmp;
 }
@@ -53,7 +52,7 @@ void print_accelerometer_data(const AccelerometerData* data, uint16_t num_sample
       Serial.print("Timestamp: "); Serial.print(data[i].timestamp); Serial.print(" us\t");
       Serial.print("X: "); Serial.print(data[i].x); Serial.print("\t");
       Serial.print("Y: "); Serial.print(data[i].y); Serial.print("\t");
-      Serial.print("Z: "); Serial.print(data[i].z); Serial.println();
+      // Serial.print("Z: "); Serial.print(data[i].z); Serial.println();
     }
     Serial.println("===================================");
 }

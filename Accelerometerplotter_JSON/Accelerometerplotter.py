@@ -468,12 +468,12 @@ def process_vibration_data(data, chunk_num, total_chunks):
         print(f"Test frequency: {combined_data['metadata']['frequency']} Hz")
         
         # Try to remove temp directory if empty, but handle permission errors
-        try:
-            if not os.listdir(temp_dir):
-                os.rmdir(temp_dir)
-        except (PermissionError, OSError) as e:
-            print(f"Note: Could not remove temporary directory: {e}")
-            print("This is not critical - processing completed successfully.")
+        # try:
+        #     if not os.listdir(temp_dir):
+        #         os.rmdir(temp_dir)
+        # except (PermissionError, OSError) as e:
+        #     print(f"Note: Could not remove temporary directory: {e}")
+        #     print("This is not critical - processing completed successfully.")
             
         return output_file
     
@@ -560,17 +560,17 @@ def plot_vibration_data(json_file=None):
         # Extract x, y, z values
         x1 = np.array([sample["x"] for sample in accel1])
         y1 = np.array([sample["y"] for sample in accel1])
-        z1 = np.array([sample["z"] for sample in accel1])
+        # z1 = np.array([sample["z"] for sample in accel1])
         
         x2 = np.array([sample["x"] for sample in accel2])
         y2 = np.array([sample["y"] for sample in accel2])
-        z2 = np.array([sample["z"] for sample in accel2])
+        # z2 = np.array([sample["z"] for sample in accel2])
         
         # Clear any existing plots
         plt.close('all')
         
         # Create figure and subplots
-        fig, axs = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+        fig, axs = plt.subplots(2, 1, figsize=(10, 12), sharex=True)
         fig.suptitle(f'Accelerometer Comparison - {os.path.basename(json_file)}', fontsize=16)
         
         # Rest of your plotting code...
@@ -587,16 +587,17 @@ def plot_vibration_data(json_file=None):
         axs[1].plot(timestamps2, y2, 'b-', label='Accelerometer 2', linewidth=1.5)
         axs[1].set_title('Y-Axis')
         axs[1].set_ylabel('Acceleration')
+        axs[1].set_xlabel('Time (seconds)')
         axs[1].grid(True, alpha=0.3)
         axs[1].legend()
         
-        axs[2].plot(timestamps1, z1, 'r-', label='Accelerometer 1', linewidth=1.5)
-        axs[2].plot(timestamps2, z2, 'b-', label='Accelerometer 2', linewidth=1.5)
-        axs[2].set_title('Z-Axis')
-        axs[2].set_xlabel('Time (seconds)')
-        axs[2].set_ylabel('Acceleration')
-        axs[2].grid(True, alpha=0.3)
-        axs[2].legend()
+        # axs[2].plot(timestamps1, z1, 'r-', label='Accelerometer 1', linewidth=1.5)
+        # axs[2].plot(timestamps2, z2, 'b-', label='Accelerometer 2', linewidth=1.5)
+        # axs[2].set_title('Z-Axis')
+        # axs[2].set_xlabel('Time (seconds)')
+        # axs[2].set_ylabel('Acceleration')
+        # axs[2].grid(True, alpha=0.3)
+        # axs[2].legend()
         
         # Add metadata
         metadata = data.get("metadata", {})
@@ -677,11 +678,11 @@ def calculate_accelerometer_gain(json_file=None):
     # Extract x, y, z values
     x1 = np.array([sample["x"] for sample in accel1])
     y1 = np.array([sample["y"] for sample in accel1])
-    z1 = np.array([sample["z"] for sample in accel1])
+    # z1 = np.array([sample["z"] for sample in accel1])
     
     x2 = np.array([sample["x"] for sample in accel2])
     y2 = np.array([sample["y"] for sample in accel2])
-    z2 = np.array([sample["z"] for sample in accel2])
+    # z2 = np.array([sample["z"] for sample in accel2])
     
     # Calculate RMS values for each axis
     def rms(values):
@@ -689,17 +690,17 @@ def calculate_accelerometer_gain(json_file=None):
     
     rms_x1 = rms(x1)
     rms_y1 = rms(y1)
-    rms_z1 = rms(z1)
+    # rms_z1 = rms(z1)
     
     rms_x2 = rms(x2)
     rms_y2 = rms(y2)
-    rms_z2 = rms(z2)
+    # rms_z2 = rms(z2)
     
     # Calculate gain (ratio of accelerometer 2 to accelerometer 1)
     # Handle potential division by zero
     gain_x = rms_x2 / rms_x1 if rms_x1 != 0 else float('inf')
     gain_y = rms_y2 / rms_y1 if rms_y1 != 0 else float('inf')
-    gain_z = rms_z2 / rms_z1 if rms_z1 != 0 else float('inf')
+    # gain_z = rms_z2 / rms_z1 if rms_z1 != 0 else float('inf')
     
     # Extract test frequency from metadata if available
     metadata = data.get("metadata", {})
@@ -710,9 +711,9 @@ def calculate_accelerometer_gain(json_file=None):
     print(f"Test frequency: {frequency} Hz")
     print(f"X-axis gain (accel2/accel1): {gain_x:.4f}")
     print(f"Y-axis gain (accel2/accel1): {gain_y:.4f}")
-    print(f"Z-axis gain (accel2/accel1): {gain_z:.4f}")
+    # print(f"Z-axis gain (accel2/accel1): {gain_z:.4f}")
     
-    return (gain_x, gain_y, gain_z, frequency)
+    return (gain_x, gain_y, frequency)
 
 
 def main():
