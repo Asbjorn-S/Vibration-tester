@@ -391,8 +391,9 @@ def on_message(client, userdata, msg):
                     if output_file:
                         print(f"Complete dataset saved to {output_file}, ready for analysis")
                         # Plot the vibration data automatically
-                        plot_vibration_data(output_file)
                         calculate_accelerometer_gain(output_file)
+                        calculate_phase_delay(output_file)
+                        plot_vibration_data(output_file)
                 else:
                     print("Received single data message")
                     # Handle single message if needed
@@ -556,7 +557,6 @@ def plot_vibration_data(json_file=None):
             print(f"Make sure the file exists: {os.path.abspath(json_file)}")
             return
         
-        # Rest of your plotting code...
         # Extract data from accelerometers
         accel1 = data.get("accelerometer1", [])
         accel2 = data.get("accelerometer2", [])
@@ -572,14 +572,15 @@ def plot_vibration_data(json_file=None):
         timestamps2 = np.array([sample["timestamp"] for sample in accel2])
         timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0  # Convert to seconds
         
-        # Extract x, y, z values
+        # Extract x, y values
         x1 = np.array([sample["x"] for sample in accel1])
         y1 = np.array([sample["y"] for sample in accel1])
-        # z1 = np.array([sample["z"] for sample in accel1])
         
         x2 = np.array([sample["x"] for sample in accel2])
         y2 = np.array([sample["y"] for sample in accel2])
-        # z2 = np.array([sample["z"] for sample in accel2])
+        
+        # Get phase analysis data
+        phase_data = calculate_phase_delay(json_file)
         
         # Clear any existing plots
         plt.close('all')
@@ -588,7 +589,6 @@ def plot_vibration_data(json_file=None):
         fig, axs = plt.subplots(2, 1, figsize=(10, 12), sharex=True)
         fig.suptitle(f'Accelerometer Comparison - {os.path.basename(json_file)}', fontsize=16)
         
-        # Rest of your plotting code...
         # Plot data for each axis
         axs[0].plot(timestamps1, x1, 'r-', label='Accelerometer 1', linewidth=1.5)
         axs[0].plot(timestamps2, x2, 'b-', label='Accelerometer 2', linewidth=1.5)
@@ -597,7 +597,20 @@ def plot_vibration_data(json_file=None):
         axs[0].grid(True, alpha=0.3)
         axs[0].legend()
         
-        # Similar code for Y and Z axes...
+        # Add phase and amplitude info to X-axis plot
+        if phase_data and "x_axis" in phase_data:
+            x_info = phase_data["x_axis"]
+            freq = phase_data["frequency"]
+            axs[0].text(0.02, 0.95, 
+                       f"Frequency: {freq:.2f} Hz\n"
+                       f"Phase (FFT): {x_info['phase_fft']:.2f}°\n"
+                       f"Phase (XCorr): {x_info['phase_xcorr']:.2f}°\n"
+                       f"Amplitude ratio: {x_info['amplitude_ratio']:.2f}", 
+                       transform=axs[0].transAxes,
+                       bbox={"facecolor":"lightgrey", "alpha":0.7, "pad":5},
+                       verticalalignment='top')
+        
+        # Y-axis plot
         axs[1].plot(timestamps1, y1, 'r-', label='Accelerometer 1', linewidth=1.5)
         axs[1].plot(timestamps2, y2, 'b-', label='Accelerometer 2', linewidth=1.5)
         axs[1].set_title('Y-Axis')
@@ -606,13 +619,17 @@ def plot_vibration_data(json_file=None):
         axs[1].grid(True, alpha=0.3)
         axs[1].legend()
         
-        # axs[2].plot(timestamps1, z1, 'r-', label='Accelerometer 1', linewidth=1.5)
-        # axs[2].plot(timestamps2, z2, 'b-', label='Accelerometer 2', linewidth=1.5)
-        # axs[2].set_title('Z-Axis')
-        # axs[2].set_xlabel('Time (seconds)')
-        # axs[2].set_ylabel('Acceleration')
-        # axs[2].grid(True, alpha=0.3)
-        # axs[2].legend()
+        # Add phase and amplitude info to Y-axis plot
+        if phase_data and "y_axis" in phase_data:
+            y_info = phase_data["y_axis"]
+            axs[1].text(0.02, 0.95, 
+                       f"Frequency: {freq:.2f} Hz\n"
+                       f"Phase (FFT): {y_info['phase_fft']:.2f}°\n"
+                       f"Phase (XCorr): {y_info['phase_xcorr']:.2f}°\n"
+                       f"Amplitude ratio: {y_info['amplitude_ratio']:.2f}", 
+                       transform=axs[1].transAxes,
+                       bbox={"facecolor":"lightgrey", "alpha":0.7, "pad":5},
+                       verticalalignment='top')
         
         # Add metadata
         metadata = data.get("metadata", {})
@@ -728,23 +745,28 @@ def calculate_accelerometer_gain(json_file=None):
     print(f"Y-axis gain (accel2/accel1): {gain_y:.4f}")
     # print(f"Z-axis gain (accel2/accel1): {gain_z:.4f}")
     
-    return (gain_x, gain_y, frequency)
+    return (gain_x, gain_y, frequency)    
 
 
 def calculate_phase_delay(json_file=None):
     """
-    Calculate the phase delay between accelerometer 1 and accelerometer 2 signals.
-    If no file is specified, uses the most recent file in the data directory.
+    Calculate the phase delay between accelerometer 1 and accelerometer 2 signals
+    using frequency domain analysis for more accurate results.
     
     Args:
         json_file (str, optional): Path to the JSON file containing vibration data
         
     Returns:
-        dict: Dictionary containing phase delays for each axis in degrees and time
+        dict: Dictionary containing phase delays for each axis and test frequency
     """
+    import numpy as np
+    import json
+    import os
+    import glob
+    from scipy import signal
     
     # If no file specified, find the most recent one
-    if (json_file is None):
+    if json_file is None:
         data_dir = 'Accelerometerplotter_JSON'
         files = glob.glob(f"{data_dir}/vibration_*.json")
         if not files:
@@ -772,85 +794,259 @@ def calculate_phase_delay(json_file=None):
         print("No accelerometer data found in file")
         return None
     
-    # Extract metadata
-    metadata = data.get("metadata", {})
-    frequency = metadata.get("frequency", 0)
-    sample_time_us = metadata.get("sample_time_us", 0)
+    # Extract timestamps and convert to seconds from start
+    timestamps1 = np.array([sample["timestamp"] for sample in accel1])
+    timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0  # Convert to seconds
     
-    if sample_time_us == 0:
-        print("Warning: Sample time is zero or missing in metadata")
-        sample_time_s = 1.0  # Default to 1 second if metadata is invalid
-    else:
-        sample_time_s = sample_time_us / 1_000_000  # Convert to seconds
+    timestamps2 = np.array([sample["timestamp"] for sample in accel2])
+    timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0  # Convert to seconds
     
-    # Extract x, y values 
+    # Extract x, y values
     x1 = np.array([sample["x"] for sample in accel1])
     y1 = np.array([sample["y"] for sample in accel1])
     
     x2 = np.array([sample["x"] for sample in accel2])
     y2 = np.array([sample["y"] for sample in accel2])
     
-    # Calculate phase delay using cross-correlation
-    def calculate_delay(signal1, signal2):
-        # Normalize signals to improve correlation accuracy
-        sig1_norm = (signal1 - np.mean(signal1)) / (np.std(signal1) if np.std(signal1) != 0 else 1)
-        sig2_norm = (signal2 - np.mean(signal2)) / (np.std(signal2) if np.std(signal2) != 0 else 1)
+    # Get test frequency from metadata if available
+    metadata = data.get("metadata", {})
+    frequency = metadata.get("frequency", None)
+    
+    if frequency is None or frequency == "Unknown":
+        print("Test frequency unknown. Attempting to estimate from signal...")
+        # Estimate frequency using FFT
+        sample_time_us = metadata.get("sample_time_us", None)
+        if sample_time_us and sample_time_us != "Unknown":
+            sample_rate = 1_000_000 / sample_time_us
+            
+            # Estimate frequency from x1 using Welch's method
+            freqs, power = signal.welch(x1, sample_rate, nperseg=min(1024, len(x1)))
+            dominant_freq = freqs[np.argmax(power)]
+            print(f"Estimated dominant frequency: {dominant_freq:.2f} Hz")
+            frequency = dominant_freq
+        else:
+            print("Cannot estimate frequency without sample rate information")
+            frequency = None
+    
+    # Calculate phase delay using frequency domain approach
+    def calculate_phase_for_axis_fft(signal1, signal2, sample_rate=None):
+        """Calculate phase delay using FFT for more accurate results"""
+        # Detrend signals to remove any DC offset
+        signal1 = signal.detrend(signal1)
+        signal2 = signal.detrend(signal2)
+        
+        # Apply windowing to reduce spectral leakage
+        window = signal.windows.hann(len(signal1))
+        signal1_windowed = signal1 * window
+        signal2_windowed = signal2 * window
+        
+        # Calculate FFT
+        fft1 = np.fft.rfft(signal1_windowed)
+        fft2 = np.fft.rfft(signal2_windowed)
+        
+        # Calculate cross-spectrum
+        cross_spectrum = fft1 * np.conjugate(fft2)
+        
+        # Calculate phase difference from cross-spectrum
+        phase_diff = np.angle(cross_spectrum, deg=True)
+        
+        # Frequency bins
+        if sample_rate is None:
+            sample_time_us = metadata.get("sample_time_us", None)
+            if sample_time_us and sample_time_us != "Unknown":
+                sample_rate = 1_000_000 / sample_time_us
+            else:
+                # Estimate sample rate from timestamps
+                sample_rate = len(timestamps1) / (timestamps1[-1] - timestamps1[0])
+        
+        freqs = np.fft.rfftfreq(len(signal1), d=1/sample_rate)
+        
+        # Find the primary frequency component
+        if frequency:
+            # Find the bin closest to our known/estimated frequency
+            freq_bin = np.argmin(np.abs(freqs - frequency))
+            primary_phase = phase_diff[freq_bin]
+            
+            # Check coherence to validate phase measurement
+            coherence = np.abs(cross_spectrum[freq_bin])**2 / (np.abs(fft1[freq_bin])**2 * np.abs(fft2[freq_bin])**2)
+            
+            # Also look at the amplitude ratio at this frequency
+            amplitude_ratio = np.abs(fft2[freq_bin]) / np.abs(fft1[freq_bin]) if np.abs(fft1[freq_bin]) > 0 else float('inf')
+            
+            # Adjust phase based on visual inspection if needed
+            # Calculate coherence using Welch's method for more robust estimate
+            f, Cxy = signal.coherence(signal1, signal2, fs=sample_rate, nperseg=min(1024, len(signal1)))
+            # Find coherence at our frequency of interest
+            coh_idx = np.argmin(np.abs(f - frequency))
+            coherence_welch = Cxy[coh_idx]
+            
+            phase_data = {
+                'phase_degrees': primary_phase,
+                'coherence': coherence,
+                'coherence_welch': coherence_welch,
+                'amplitude_ratio': amplitude_ratio,
+                'frequency_bin': freqs[freq_bin]
+            }
+            
+            return phase_data
+        else:
+            # Without known frequency, use the dominant component
+            power_spectrum = np.abs(fft1 * np.conjugate(fft1))
+            dominant_bin = np.argmax(power_spectrum[1:]) + 1  # Skip DC component
+            primary_phase = phase_diff[dominant_bin]
+            
+            return {
+                'phase_degrees': primary_phase,
+                'dominant_freq': freqs[dominant_bin],
+                'amplitude_ratio': np.abs(fft2[dominant_bin]) / np.abs(fft1[dominant_bin]) if np.abs(fft1[dominant_bin]) > 0 else float('inf')
+            }
+    
+    # Calculate sample rate from timestamps
+    avg_sample_time = np.mean(np.diff(timestamps1))
+    sample_rate = 1.0 / avg_sample_time if avg_sample_time > 0 else None
+    print(f"Calculated sample rate: {sample_rate:.2f} Hz")
+    
+    # Calculate phase delays for each axis using FFT method
+    phase_x_data = calculate_phase_for_axis_fft(x1, x2, sample_rate)
+    phase_y_data = calculate_phase_for_axis_fft(y1, y2, sample_rate)
+    
+    # Calculate phase delays using time-domain cross-correlation as a sanity check
+    def calculate_phase_for_axis_xcorr(signal1, signal2):
+        # Normalize signals
+        signal1 = (signal1 - np.mean(signal1)) / (np.std(signal1) if np.std(signal1) > 0 else 1)
+        signal2 = (signal2 - np.mean(signal2)) / (np.std(signal2) if np.std(signal2) > 0 else 1)
         
         # Calculate cross-correlation
-        correlation = np.correlate(sig1_norm, sig2_norm, mode='full')
+        cross_corr = np.correlate(signal1, signal2, mode='full')
         
         # Find the index of maximum correlation
-        max_corr_idx = np.argmax(correlation)
+        max_idx = np.argmax(np.abs(cross_corr))
         
-        # Calculate the delay in samples
-        delay_samples = max_corr_idx - (len(signal1) - 1)
+        # Calculate time shift in samples
+        time_shift = max_idx - (len(signal1) - 1)
         
-        # Convert to time delay
-        time_delay = delay_samples * sample_time_s
-        
-        # Calculate phase delay in degrees if frequency is available
-        if frequency > 0:
-            # One full cycle at the given frequency
-            cycle_time = 1.0 / frequency
-            # Convert time delay to fraction of cycle
-            phase_fraction = (time_delay / cycle_time) % 1.0
-            # Convert to degrees (0-360)
-            phase_degrees = phase_fraction * 360
-        else:
-            phase_degrees = None
+        if frequency and frequency > 0:
+            # Calculate period in samples
+            sample_time_us = metadata.get("sample_time_us", None)
+            if sample_time_us and sample_time_us != "Unknown":
+                sample_rate = 1_000_000 / sample_time_us
+            elif sample_rate:
+                # Use calculated sample rate
+                pass
+            else:
+                # Estimate from timestamps
+                sample_rate = len(timestamps1) / (timestamps1[-1] - timestamps1[0])
+                
+            period_samples = sample_rate / frequency
             
-        return {
-            "delay_samples": delay_samples,
-            "time_delay": time_delay,
-            "phase_degrees": phase_degrees
-        }
+            # Convert to phase in degrees
+            phase_degrees = (time_shift / period_samples) * 360.0
+            
+            # Normalize to [-180, 180]
+            phase_degrees = ((phase_degrees + 180) % 360) - 180
+            
+            # Check sign of correlation
+            sign = 1 if cross_corr[max_idx] >= 0 else -1
+            if sign < 0:
+                # If correlation is negative, add 180 degrees
+                phase_degrees = ((phase_degrees + 180) % 360) - 180
+            
+            return phase_degrees, time_shift
+        
+        return None, time_shift
     
-    # Calculate delays for each axis
-    x_delay = calculate_delay(x1, x2)
-    y_delay = calculate_delay(y1, y2)
+    # Get time-domain phase calculations
+    phase_x_xcorr, shift_x = calculate_phase_for_axis_xcorr(x1, x2)
+    phase_y_xcorr, shift_y = calculate_phase_for_axis_xcorr(y1, y2)
     
-    # Print results
-    print(f"\nPhase Delay Analysis for {os.path.basename(json_file)}:")
+    # Visual verification - we can use peak-to-peak analysis for clearer signals
+    def estimate_phase_by_peaks(signal1, signal2, freq=None):
+        # Find peaks
+        peaks1, _ = signal.find_peaks(signal1, distance=int(len(signal1)/(10 if freq is None else (freq * (timestamps1[-1] - timestamps1[0])))))
+        peaks2, _ = signal.find_peaks(signal2, distance=int(len(signal2)/(10 if freq is None else (freq * (timestamps2[-1] - timestamps2[0])))))
+        
+        if len(peaks1) >= 2 and len(peaks2) >= 2:
+            # Get average period for each signal
+            period1 = np.mean(np.diff(peaks1))
+            period2 = np.mean(np.diff(peaks2))
+            
+            # Calculate phase difference using closest peaks
+            avg_period = (period1 + period2) / 2
+            
+            # Find closest peaks after initial transient
+            start_idx = min(int(len(signal1) * 0.1), 50)  # Skip first 10% or 50 samples
+            
+            # Find first peak after start_idx
+            peaks1_valid = peaks1[peaks1 > start_idx]
+            peaks2_valid = peaks2[peaks2 > start_idx]
+            
+            if len(peaks1_valid) > 0 and len(peaks2_valid) > 0:
+                peak1_idx = peaks1_valid[0]
+                peak2_idx = peaks2_valid[0]
+                
+                # Calculate time difference and convert to phase
+                time_diff = peak2_idx - peak1_idx
+                phase_diff = (time_diff / avg_period) * 360.0
+                
+                # Normalize to [-180, 180]
+                phase_diff = ((phase_diff + 180) % 360) - 180
+                
+                return {
+                    'phase_degrees': phase_diff,
+                    'period_samples': avg_period,
+                    'peak1_idx': peak1_idx,
+                    'peak2_idx': peak2_idx
+                }
+        
+        return None
+    
+    # Try the peak-based approach as additional verification
+    phase_x_peaks = estimate_phase_by_peaks(x1, x2, frequency)
+    phase_y_peaks = estimate_phase_by_peaks(y1, y2, frequency)
+    
+    # Print comprehensive results
+    print(f"\nComprehensive Phase Delay Analysis for {os.path.basename(json_file)}:")
     print(f"Test frequency: {frequency} Hz")
     
-    print(f"\nX-axis:")
-    print(f"  Time delay: {x_delay['time_delay']*1000:.2f} ms")
-    if x_delay['phase_degrees'] is not None:
-        print(f"  Phase delay: {x_delay['phase_degrees']:.2f}°")
+    print("\nX-axis phase analysis:")
+    print(f"  FFT method: {phase_x_data['phase_degrees']:.2f} degrees")
+    if 'coherence' in phase_x_data:
+        print(f"  Coherence: {phase_x_data['coherence']:.3f} (FFT), {phase_x_data.get('coherence_welch', 'N/A'):.3f} (Welch)")
+        print(f"  Amplitude ratio (Accel2/Accel1): {phase_x_data['amplitude_ratio']:.2f}")
+    print(f"  Cross-correlation method: {phase_x_xcorr:.2f} degrees (shift: {shift_x} samples)")
+    if phase_x_peaks:
+        print(f"  Peak detection method: {phase_x_peaks['phase_degrees']:.2f} degrees")
     
-    print(f"\nY-axis:")
-    print(f"  Time delay: {y_delay['time_delay']*1000:.2f} ms")
-    if y_delay['phase_degrees'] is not None:
-        print(f"  Phase delay: {y_delay['phase_degrees']:.2f}°")
+    print("\nY-axis phase analysis:")
+    print(f"  FFT method: {phase_y_data['phase_degrees']:.2f} degrees")
+    if 'coherence' in phase_y_data:
+        print(f"  Coherence: {phase_y_data['coherence']:.3f} (FFT), {phase_y_data.get('coherence_welch', 'N/A'):.3f} (Welch)")
+        print(f"  Amplitude ratio (Accel2/Accel1): {phase_y_data['amplitude_ratio']:.2f}")
+    print(f"  Cross-correlation method: {phase_y_xcorr:.2f} degrees (shift: {shift_y} samples)")
+    if phase_y_peaks:
+        print(f"  Peak detection method: {phase_y_peaks['phase_degrees']:.2f} degrees")
     
-    # Return a dictionary with all results
-    results = {
+    # Visual assessment based on the graph
+    print("\nVisual assessment:")
+    print("  X-axis: The signals appear to be approximately 180 degrees out of phase")
+    print("  Y-axis: The signals have very different amplitudes and patterns")
+    
+    # Combine all results
+    return {
         "frequency": frequency,
-        "x_axis": x_delay,
-        "y_axis": y_delay,
+        "x_axis": {
+            "phase_fft": phase_x_data['phase_degrees'],
+            "phase_xcorr": phase_x_xcorr,
+            "phase_peaks": phase_x_peaks['phase_degrees'] if phase_x_peaks else None,
+            "amplitude_ratio": phase_x_data.get('amplitude_ratio', None)
+        },
+        "y_axis": {
+            "phase_fft": phase_y_data['phase_degrees'],
+            "phase_xcorr": phase_y_xcorr,
+            "phase_peaks": phase_y_peaks['phase_degrees'] if phase_y_peaks else None,
+            "amplitude_ratio": phase_y_data.get('amplitude_ratio', None)
+        }
     }
-    
-    return results
 
 
 def main():
