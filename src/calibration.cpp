@@ -40,7 +40,7 @@ void test_frequency_v_amplitude() {
       // Measure frequency
       unsigned long actualSampleStart = micros();
       uint16_t sampleIndex = 0;
-            while (sampleIndex < FFT_SAMPLES) {
+      while (sampleIndex < FFT_SAMPLES) {
         AccelerometerData sample = sample_accelerometer(lis1);
   
         // Store the accelerometer's X-axis data in the FFT input array
