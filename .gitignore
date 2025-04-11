@@ -4,3 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 Accelerometerplotter_JSON/*.json
+Accelerometerplotter_JSON/*.png

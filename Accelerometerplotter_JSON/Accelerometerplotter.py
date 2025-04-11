@@ -392,7 +392,6 @@ def on_message(client, userdata, msg):
                         print(f"Complete dataset saved to {output_file}, ready for analysis")
                         # Plot the vibration data automatically
                         calculate_accelerometer_gain(output_file)
-                        calculate_phase_delay(output_file)
                         plot_vibration_data(output_file)
                 else:
                     print("Received single data message")
@@ -648,6 +647,14 @@ def plot_vibration_data(json_file=None):
                        ha="center", fontsize=10, bbox={"facecolor":"orange", "alpha":0.2, "pad":5})
         
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        
+        # Save the plot with the same base name as the JSON file
+        plot_file = os.path.splitext(json_file)[0] + '.png'
+        try:
+            fig.savefig(plot_file, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {plot_file}")
+        except Exception as e:
+            print(f"Error saving plot: {e}")
         
         # Block=True with show() to make it modal (waits for window to close)
         plt.show(block=True)
@@ -1052,7 +1059,7 @@ def calculate_phase_delay(json_file=None):
 def main():
     import sys
     # Set up MQTT connection to broker
-    client = connect_mqtt(broker_address="192.168.68.126", port=1883, 
+    client = connect_mqtt(broker_address="192.168.68.127", port=1883, 
                          client_id="AccelerometerPlotter", 
                          keepalive=15)  # Reduced keepalive time
 
