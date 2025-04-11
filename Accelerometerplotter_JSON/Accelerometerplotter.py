@@ -177,6 +177,7 @@ def listen_for_commands(client):
         print("8. gain [filename] - Calculate gain between accelerometers (most recent if no filename specified)")
         print("9. exit - Exit the program")
         print("10. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
+        print("11. sweep <start_freq> <end_freq> <step_freq> - Run tests at multiple frequencies")
     
     # Show commands at startup
     display_help()
@@ -287,6 +288,26 @@ def listen_for_commands(client):
                 else:
                     print("Calculating phase delay from most recent data...")
                     calculate_phase_delay()
+            
+            elif command.startswith("sweep"):
+                try:
+                    parts = command.split()
+                    if len(parts) < 4:
+                        print("Error: Please provide start, end, and step frequencies")
+                        print("Usage: sweep <start_freq> <end_freq> <step_freq>")
+                        continue
+                        
+                    start_freq = float(parts[1])
+                    end_freq = float(parts[2])
+                    step_freq = float(parts[3])
+                    
+                    print(f"Starting frequency sweep from {start_freq} to {end_freq} Hz with {step_freq} Hz steps")
+                        
+                    test_results = test_frequency_range(client, start_freq, end_freq, step_freq)
+                    
+                except (IndexError, ValueError) as e:
+                    print(f"Error: {e}")
+                    print("Usage: sweep <start_freq> <end_freq> <step_freq>")
                 
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
@@ -391,8 +412,8 @@ def on_message(client, userdata, msg):
                     if output_file:
                         print(f"Complete dataset saved to {output_file}, ready for analysis")
                         # Plot the vibration data automatically
-                        calculate_accelerometer_gain(output_file)
-                        plot_vibration_data(output_file)
+                        # calculate_accelerometer_gain(output_file)
+                        # plot_vibration_data(output_file)
                 else:
                     print("Received single data message")
                     # Handle single message if needed
@@ -657,7 +678,7 @@ def plot_vibration_data(json_file=None):
             print(f"Error saving plot: {e}")
         
         # Block=True with show() to make it modal (waits for window to close)
-        plt.show(block=True)
+        # plt.show(block=True)
 
     # If we're in a background thread, use the main thread for plotting
     if threading.current_thread() is not threading.main_thread():
@@ -1054,6 +1075,141 @@ def calculate_phase_delay(json_file=None):
             "amplitude_ratio": phase_y_data.get('amplitude_ratio', None)
         }
     }
+
+
+def test_frequency_range(client, start_freq, end_freq, step_freq, amplitude=None):
+    """
+    Test a range of frequencies, automatically running tests and plotting results.
+    
+    Args:
+        client: MQTT client object
+        start_freq: Starting frequency in Hz
+        end_freq: Ending frequency in Hz (inclusive)
+        step_freq: Step size between frequencies in Hz
+        amplitude: Optional amplitude value to use (uses last set amplitude if None)
+        delay_between_tests: Delay in seconds between tests to allow system to stabilize
+    
+    Returns:
+        list: List of dictionaries containing test results for each frequency
+    """
+    import time
+    import os
+    import glob
+    
+    # Check if client is connected
+    if not client or not client.is_connected():
+        print("MQTT client not connected. Cannot run tests.")
+        return []
+    
+    # Validate parameters
+    if start_freq <= 0 or end_freq <= 0 or step_freq <= 0:
+        print("Error: Frequencies must be positive values")
+        return []
+        
+    if start_freq < end_freq:
+        print("Error: Start frequency must be less than end frequency")
+        return []
+    
+    # Store results
+    test_results = []
+    
+    # Calculate number of tests for progress tracking
+    num_tests = int((end_freq - start_freq) / step_freq) + 1
+    current_test = 1
+    
+    # Define the working directory
+    data_dir = 'Accelerometerplotter_JSON'
+    
+    print(f"\nStarting frequency sweep from {start_freq} to {end_freq} Hz in {step_freq} Hz steps")
+    print(f"Total tests: {num_tests}")
+    
+    # For each frequency
+    curr_freq = start_freq
+    while curr_freq >= end_freq:
+        print(f"\n[{current_test}/{num_tests}] Testing {curr_freq} Hz...")
+        
+        # Run test at this frequency
+        client.publish("vibration/test", str(curr_freq))
+        
+        # Wait for test to complete and data to be processed
+        # Since MQTT is asynchronous, we need to wait for the file to appear
+        # Get the count of existing files
+        initial_file_count = len(glob.glob(f"{data_dir}/vibration_*.json"))
+        
+        print("Test initiated, waiting for data collection...")
+        
+        # Wait for new file to appear (max 20 seconds)
+        wait_time = 0
+        new_file = None
+        max_wait = 20  # Maximum wait time in seconds
+        
+        while wait_time < max_wait:
+            time.sleep(1)
+            wait_time += 1
+            
+            # Check for new files
+            current_files = glob.glob(f"{data_dir}/vibration_*.json")
+            if len(current_files) > initial_file_count:
+                # Sort by modification time to find the most recent
+                current_files.sort(key=os.path.getmtime)
+                new_file = current_files[-1]
+                print(f"Data received: {os.path.basename(new_file)}")
+                break
+                
+            if wait_time % 5 == 0:
+                print(f"Still waiting for data... ({wait_time}s)")
+        
+        if new_file:
+            # Wait a bit more for any processing to finish
+            time.sleep(1)
+            
+            # Analyze the data
+            # print("Analyzing data...")
+            gain_results = calculate_accelerometer_gain(new_file)
+            # phase_results = calculate_phase_delay(new_file)
+            
+            # Store results
+            test_results.append({
+                'frequency': curr_freq,
+                'file': new_file,
+                'gain': gain_results,
+                # 'phase': phase_results
+            })
+            
+            # Plot the data
+            plot_vibration_data(new_file)
+        else:
+            print(f"No data received for {curr_freq} Hz after {max_wait} seconds")
+        
+        # Move to next frequency
+        curr_freq -= step_freq
+        current_test += 1
+    # 
+    print("\nFrequency sweep completed.")
+    
+    # Summarize results
+    print("\n=== TEST SUMMARY ===")
+    print(f"Tested {len(test_results)} frequencies from {start_freq} to {end_freq} Hz")
+    
+    if test_results:
+        print("\nFrequency   |   X Gain   |   Y Gain   |   X Phase (deg)   |   Y Phase (deg)")
+        print("-" * 75)
+        
+        for result in test_results:
+            freq = result['frequency']
+            gain_x = result['gain'][0] if result['gain'] else 'N/A'
+            gain_y = result['gain'][1] if result['gain'] else 'N/A'
+            
+            if result['phase']:
+                phase_x = result['phase']['x_axis']['phase_fft']
+                phase_y = result['phase']['y_axis']['phase_fft']
+            else:
+                phase_x = 'N/A'
+                phase_y = 'N/A'
+            
+            print(f"{freq:8.2f}   |   {gain_x:6.2f}   |   {gain_y:6.2f}   |   {phase_x:12.2f}   |   {phase_y:12.2f}")
+    
+    return test_results
 
 
 def main():
