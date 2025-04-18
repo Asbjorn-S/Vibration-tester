@@ -5,6 +5,16 @@ import os
 import glob
 import numpy as np
 
+DEFAULT_CONFIG = {
+    "sample_rate": 1600,
+    "data_dir": "Accelerometerplotter_JSON",
+    "figure_size": (12, 6),
+    "labels": {
+        "accel1": "Reference",
+        "accel2": "O-ring"
+    }
+}
+
 def calculate_fft(accel1, accel2, sample_rate=1600):
         # Perform FFT
         N = len(accel1)
@@ -44,11 +54,34 @@ def calculate_phase_gain_from_fft(f_axis, yf1, yf2, N):
         
         return [dominant_freq, phase_diff_deg, gain]
 
-def plot_fft(f_axis, yf1, yf2, N):
-    plt.plot(f_axis, 2.0/N * np.abs(yf1[:N//2]), label='Reference')
-    plt.plot(f_axis, 2.0/N * np.abs(yf2[:N//2]), label='O-ring')
+def plot_fft(f_axis, yf1, yf2, N, labels=None):
+    """
+    Plot FFT results with customizable labels.
+    
+    Args:
+        f_axis: Frequency axis values
+        yf1: FFT results for first signal
+        yf2: FFT results for second signal
+        N: Number of samples
+        labels: Dict with labels for signals
+    """
+    if labels is None:
+        labels = {"accel1": "Reference", "accel2": "O-ring"}
+    
+    plt.plot(f_axis, 2.0/N * np.abs(yf1[:N//2]), label=labels["accel1"])
+    plt.plot(f_axis, 2.0/N * np.abs(yf2[:N//2]), label=labels["accel2"])
 
-def calculate_amplitude_phase_delay(json_file=None):
+def load_vibration_data(json_file=None):
+    """
+    Load vibration data from a JSON file or the most recent one.
+    
+    Args:
+        json_file (str, optional): Path to JSON file
+        
+    Returns:
+        dict: Contains processed data or None if loading failed
+    """
+    # Find file if not specified
     if json_file is None:
         data_dir = 'Accelerometerplotter_JSON'
         files = glob.glob(f"{data_dir}/vibration_*.json")
@@ -56,7 +89,6 @@ def calculate_amplitude_phase_delay(json_file=None):
             print("No vibration data files found")
             return None
         
-        # Sort by modification time (most recent last)
         files.sort(key=os.path.getmtime)
         json_file = files[-1]
         print(f"Using most recent data file: {json_file}")
@@ -69,7 +101,7 @@ def calculate_amplitude_phase_delay(json_file=None):
         print(f"Error loading data file: {e}")
         return None
     
-    # Extract data from accelerometers
+    # Extract data
     accel1 = data.get("accelerometer1", [])
     accel2 = data.get("accelerometer2", [])
     
@@ -77,32 +109,43 @@ def calculate_amplitude_phase_delay(json_file=None):
         print("No accelerometer data found in file")
         return None
     
-    # Extract timestamps and convert to seconds from start
+    # Process timestamps and acceleration data
     timestamps1 = np.array([sample["timestamp"] for sample in accel1])
-    timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0  # Convert to seconds
+    # timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0 # Convert to seconds
     
     timestamps2 = np.array([sample["timestamp"] for sample in accel2])
-    timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0  # Convert to seconds
+    # timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0 # Convert to seconds
     
-    # Extract x, y values
+    # Extract axis values
     x1 = np.array([sample["x"] for sample in accel1])
     y1 = np.array([sample["y"] for sample in accel1])
     
     x2 = np.array([sample["x"] for sample in accel2])
     y2 = np.array([sample["y"] for sample in accel2])
     
-    # Calculate FFT
-    x_axis_fft = calculate_fft(x1, x2)
-    y_axis_fft = calculate_fft(y1, y2)
+    return {
+        "timestamps1": timestamps1,
+        "timestamps2": timestamps2,
+        "x1": x1, "y1": y1,
+        "x2": x2, "y2": y2,
+        "metadata": data.get("metadata", {}),
+        "filename": json_file
+    }
 
-    print("Phase difference for X axis:")
-    x_phase = calculate_phase_gain_from_fft(x_axis_fft[0], x_axis_fft[1], x_axis_fft[2], x_axis_fft[3])
-    print("Phase difference for Y axis:")
-    y_phase = calculate_phase_gain_from_fft(y_axis_fft[0], y_axis_fft[1], y_axis_fft[2], y_axis_fft[3])
-
-    plt.figure(figsize=(12, 6))
+def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG):
+    """
+    Display FFT plots for both X and Y axes.
+    
+    Args:
+        x_axis_fft: FFT data for X axis
+        y_axis_fft: FFT data for Y axis
+        config: Configuration dictionary
+    """
+    plt.figure(figsize=config["figure_size"])
+    
     plt.subplot(2, 1, 1)
-    plot_fft(x_axis_fft[0], x_axis_fft[1], x_axis_fft[2], x_axis_fft[3])
+    plot_fft(x_axis_fft[0], x_axis_fft[1], x_axis_fft[2], x_axis_fft[3], 
+             labels=config["labels"])
     plt.title('FFT of X Axis')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Amplitude')
@@ -110,15 +153,53 @@ def calculate_amplitude_phase_delay(json_file=None):
     plt.legend()
 
     plt.subplot(2, 1, 2)
-    plot_fft(y_axis_fft[0], y_axis_fft[1], y_axis_fft[2], y_axis_fft[3])
+    plot_fft(y_axis_fft[0], y_axis_fft[1], y_axis_fft[2], y_axis_fft[3],
+             labels=config["labels"])
     plt.title('FFT of Y Axis')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Amplitude')
     plt.grid()
     plt.legend()
+    plt.tight_layout()
     plt.show()
 
-    return x_phase, y_phase
+
+def analyze_vibration_data(json_file=None, config=None):
+    """
+    Complete analysis workflow for vibration data.
+    
+    Args:
+        json_file: Path to JSON file with vibration data
+        config: Configuration dictionary
+    
+    Returns:
+        dict: Results including phase information
+    """
+    if config is None:
+        config = DEFAULT_CONFIG
+        
+    # Load and prepare data
+    data = load_vibration_data(json_file)
+    if data is None:
+        return None
+    
+    # Calculate FFTs
+    x_axis_fft = calculate_fft(data["x1"], data["x2"], config["sample_rate"])
+    y_axis_fft = calculate_fft(data["y1"], data["y2"], config["sample_rate"])
+    
+    # Calculate phase information
+    print("Phase difference for X axis:")
+    x_phase = calculate_phase_gain_from_fft(x_axis_fft[0], x_axis_fft[1], 
+                                          x_axis_fft[2], x_axis_fft[3])
+    
+    print("Phase difference for Y axis:")
+    y_phase = calculate_phase_gain_from_fft(y_axis_fft[0], y_axis_fft[1], 
+                                          y_axis_fft[2], y_axis_fft[3])
+    
+    # Display plots
+    display_fft_plot(x_axis_fft, y_axis_fft, config)
+    
+    return {"x_phase": x_phase, "y_phase": y_phase}
 
 def plot_vibration_data_2(json_file=None):
     """
@@ -229,5 +310,5 @@ def plot_vibration_data_2(json_file=None):
 
 if __name__ == "__main__":
     # Example usage with a specific file
-    calculate_amplitude_phase_delay(r"C:\Users\asbjo\Desktop\Sort_ring\Forsøk 2\vibration_2025-04-11_14-51-12_300.0Hz.json")
-    plot_vibration_data_2(r"C:\Users\asbjo\Desktop\Sort_ring\Forsøk 2\vibration_2025-04-11_14-51-12_300.0Hz.json")
+    analyze_vibration_data(r"C:\Users\asbjo\Desktop\Sort_ring\Forsøk 2\vibration_2025-04-11_14-51-12_300.0Hz.json")
+    #plot_vibration_data_2(r"C:\Users\asbjo\Desktop\Sort_ring\Forsøk 2\vibration_2025-04-11_14-51-12_300.0Hz.json")
