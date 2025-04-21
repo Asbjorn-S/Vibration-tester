@@ -9,6 +9,7 @@ import glob
 import matplotlib
 import threading
 import fft_analysis
+import communication
 matplotlib.use('TkAgg')  # Use TkAgg backend for better performance
 plt.ion()  # Enable interactive mode
 
@@ -406,7 +407,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
 def main():
     import sys
     # Set up MQTT connection to broker
-    client = connect_mqtt(broker_address="192.168.0.125", port=1883, 
+    client = communication.connect_mqtt(broker_address="192.168.0.125", port=1883, 
                          client_id="AccelerometerPlotter", 
                          keepalive=15)  # Reduced keepalive time
 
@@ -414,7 +415,7 @@ def main():
         print("Failed to establish initial connection to MQTT broker. Exiting.")
         return
 
-    setup_mqtt_callbacks(client)
+    communication.setup_mqtt_callbacks(client)
     
     # Create a separate thread for heartbeat
     def heartbeat_thread():
@@ -437,7 +438,7 @@ def main():
                             client.reconnect()
                             # Re-subscribe on successful reconnection
                             if client.is_connected():
-                                setup_mqtt_callbacks(client)
+                                communication.setup_mqtt_callbacks(client)
                                 print("Reconnected and resubscribed to topics")
                         except Exception as e:
                             print(f"Reconnection failed: {e}")
@@ -456,7 +457,7 @@ def main():
     try:
         print("Program running. Press Ctrl+C to exit.")
         # Use your original command listener
-        listen_for_commands(client)
+        communication.listen_for_commands(client)
     except KeyboardInterrupt:
         print("Program terminated by user")
     finally:
