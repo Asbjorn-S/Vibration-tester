@@ -4,7 +4,7 @@ Fix phase delay function:
 
 Use calculated frequency in plot instead of applied frequency
 
-Create tables that summarize characteristics measured from each test
+Create tables that summarize characteristics measured from each sweep test
 
 Eliminate outliers 
     Run several tests
@@ -21,3 +21,5 @@ metadata
     Include metadata in the test data instead of sending as a separate topic, preventing mixups
 
 Split python script into multiple files
+
+Save fft plot to a file
