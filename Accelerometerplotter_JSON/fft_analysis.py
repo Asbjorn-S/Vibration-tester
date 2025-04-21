@@ -4,6 +4,7 @@ import json
 import os
 import glob
 import numpy as np
+import Accelerometerplotter 
 
 DEFAULT_CONFIG = {
     "sample_rate": 1600,
@@ -15,66 +16,7 @@ DEFAULT_CONFIG = {
     }
 }
 
-def load_vibration_data(json_file=None):
-    """
-    Load vibration data from a JSON file or the most recent one.
-    
-    Args:
-        json_file (str, optional): Path to JSON file
-        
-    Returns:
-        dict: Contains processed data or None if loading failed
-    """
-    # Find file if not specified
-    if json_file is None:
-        data_dir = 'Accelerometerplotter_JSON'
-        files = glob.glob(f"{data_dir}/vibration_*.json")
-        if not files:
-            print("No vibration data files found")
-            return None
-        
-        files.sort(key=os.path.getmtime)
-        json_file = files[-1]
-        print(f"Using most recent data file: {json_file}")
-    
-    # Load the data
-    try:
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Error loading data file: {e}")
-        return None
-    
-    # Extract data
-    accel1 = data.get("accelerometer1", [])
-    accel2 = data.get("accelerometer2", [])
-    
-    if not accel1 or not accel2:
-        print("No accelerometer data found in file")
-        return None
-    
-    # Process timestamps and acceleration data
-    timestamps1 = np.array([sample["timestamp"] for sample in accel1])
-    # timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0 # Convert to seconds
-    
-    timestamps2 = np.array([sample["timestamp"] for sample in accel2])
-    # timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0 # Convert to seconds
-    
-    # Extract axis values
-    x1 = np.array([sample["x"] for sample in accel1])
-    y1 = np.array([sample["y"] for sample in accel1])
-    
-    x2 = np.array([sample["x"] for sample in accel2])
-    y2 = np.array([sample["y"] for sample in accel2])
-    
-    return {
-        "timestamps1": timestamps1,
-        "timestamps2": timestamps2,
-        "x1": x1, "y1": y1,
-        "x2": x2, "y2": y2,
-        "metadata": data.get("metadata", {}),
-        "filename": json_file
-    }
+
 
 def calculate_fft(accel1, accel2, sample_rate=1600):
     """
@@ -169,14 +111,15 @@ def plot_fft(f_axis, yf1, yf2, N, labels=None):
     plt.plot(f_axis, 2.0/N * np.abs(yf1[:N//2]), label=labels["accel1"])
     plt.plot(f_axis, 2.0/N * np.abs(yf2[:N//2]), label=labels["accel2"])
 
-def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG):
+def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG, json_file=None):
     """
-    Display FFT plots for both X and Y axes.
+    Display FFT plots for both X and Y axes and save to PNG file.
     
     Args:
         x_axis_fft: FFT data dictionary for X axis
         y_axis_fft: FFT data dictionary for Y axis
         config: Configuration dictionary
+        json_file: Path to JSON file (for naming the output PNG)
     """
     plt.figure(figsize=config["figure_size"])
     
@@ -198,6 +141,14 @@ def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG):
     plt.grid()
     plt.legend()
     plt.tight_layout()
+    
+    # Save plot as PNG if a JSON file was provided
+    if json_file:
+        # Create output filename by appending _fft to the original filename
+        output_file = os.path.splitext(json_file)[0] + "_fft.png"
+        plt.savefig(output_file, dpi=300)
+        print(f"FFT plot saved to: {output_file}")
+    
     plt.show()
 
 def analyze(json_file=None, config=None):
@@ -215,7 +166,7 @@ def analyze(json_file=None, config=None):
         config = DEFAULT_CONFIG
         
     # Load and prepare data
-    data = load_vibration_data(json_file)
+    data = Accelerometerplotter.load_vibration_data(json_file)
     if data is None:
         return None
     
@@ -231,7 +182,7 @@ def analyze(json_file=None, config=None):
     y_phase = calculate_phase_gain_from_fft(y_axis_fft)
     
     # Display plots
-    display_fft_plot(x_axis_fft, y_axis_fft, config)
+    display_fft_plot(x_axis_fft, y_axis_fft, config, json_file)
     
     return {
         "x_phase": x_phase, 
@@ -239,6 +190,7 @@ def analyze(json_file=None, config=None):
         "x_fft": x_axis_fft,
         "y_fft": y_axis_fft
     }
+
 if __name__ == "__main__":
     # Example usage with a specific file
     analyze(r"C:\Users\asbjo\Desktop\Sort_ring\Forsøk 2\vibration_2025-04-11_14-51-12_300.0Hz.json")
