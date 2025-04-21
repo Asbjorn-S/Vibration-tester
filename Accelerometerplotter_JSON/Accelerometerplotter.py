@@ -406,6 +406,20 @@ def on_message(client, userdata, msg):
         import traceback
         traceback.print_exc()
 
+# To use this callback, you would register it with your MQTT client
+def setup_mqtt_callbacks(client):
+    """Set up the MQTT client callbacks and topic subscriptions"""
+    # Set callback for message reception
+    client.on_message = on_message
+    
+    # Subscribe to relevant topics
+    client.subscribe("vibration/calibration/status")
+    client.subscribe("vibration/calibration/data")
+    client.subscribe("vibration/data")
+    client.subscribe("vibration/metadata")
+    
+    print("MQTT callbacks configured and topics subscribed")
+
 def process_vibration_data(data, chunk_num, total_chunks):
     """
     Process and store vibration data from chunked MQTT messages.
@@ -492,19 +506,73 @@ def process_vibration_data(data, chunk_num, total_chunks):
     
     return None
 
-# To use this callback, you would register it with your MQTT client
-def setup_mqtt_callbacks(client):
-    """Set up the MQTT client callbacks and topic subscriptions"""
-    # Set callback for message reception
-    client.on_message = on_message
+def load_vibration_data(json_file=None):
+    """
+    Load vibration data from a JSON file or the most recent one.
     
-    # Subscribe to relevant topics
-    client.subscribe("vibration/calibration/status")
-    client.subscribe("vibration/calibration/data")
-    client.subscribe("vibration/data")
-    client.subscribe("vibration/metadata")
+    Args:
+        json_file (str, optional): Path to JSON file
+        
+    Returns:
+        dict: Contains processed data or None if loading failed
+    """
+    # Find file if not specified
+    if json_file is None:
+        data_dir = 'Accelerometerplotter_JSON'
+        files = glob.glob(f"{data_dir}/vibration_*.json")
+        if not files:
+            print("No vibration data files found")
+            # Show available files
+            print("\nAvailable data files:")
+            all_files = glob.glob(f"{data_dir}/*.json")
+            if all_files:
+                for i, file in enumerate(all_files):
+                    print(f"  {i+1}. {os.path.basename(file)}")
+                print("\nTo plot a specific file, use: plot <filename>")
+            return None
+        
+        files.sort(key=os.path.getmtime)
+        json_file = files[-1]
+        print(f"Using most recent data file: {json_file}")
     
-    print("MQTT callbacks configured and topics subscribed")
+    # Load the data
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading data file: {e}")
+        return None
+    
+    # Extract data
+    accel1 = data.get("accelerometer1", [])
+    accel2 = data.get("accelerometer2", [])
+    
+    if not accel1 or not accel2:
+        print("No accelerometer data found in file")
+        return None
+    
+    # Process timestamps and acceleration data
+    timestamps1 = np.array([sample["timestamp"] for sample in accel1])
+    # timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0 # Convert to seconds
+    
+    timestamps2 = np.array([sample["timestamp"] for sample in accel2])
+    # timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0 # Convert to seconds
+    
+    # Extract axis values
+    x1 = np.array([sample["x"] for sample in accel1])
+    y1 = np.array([sample["y"] for sample in accel1])
+    
+    x2 = np.array([sample["x"] for sample in accel2])
+    y2 = np.array([sample["y"] for sample in accel2])
+    
+    return {
+        "timestamps1": timestamps1,
+        "timestamps2": timestamps2,
+        "x1": x1, "y1": y1,
+        "x2": x2, "y2": y2,
+        "metadata": data.get("metadata", {}),
+        "filename": json_file
+    }
 
 def plot_vibration_data(json_file=None):
     """
@@ -518,63 +586,20 @@ def plot_vibration_data(json_file=None):
     def do_plot():
         # Your existing code for finding files
         # If no file specified, find the most recent one
-        nonlocal json_file
-        if (json_file is None):
-            data_dir = 'Accelerometerplotter_JSON'
-            files = glob.glob(f"{data_dir}/vibration_*.json")
-            if not files:
-                print("No vibration data files found")
-                # Show available files
-                print("\nAvailable data files:")
-                all_files = glob.glob(f"{data_dir}/*.json")
-                if all_files:
-                    for i, file in enumerate(all_files):
-                        print(f"  {i+1}. {os.path.basename(file)}")
-                    print("\nTo plot a specific file, use: plot <filename>")
-                return
-            
-            # Sort by modification time (most recent last)
-            files.sort(key=os.path.getmtime)
-            json_file = files[-1]
-            print(f"Using most recent data file: {json_file}")
-            
-            # Show other available files
-            print("\nOther available data files:")
-            for i, file in enumerate(reversed(files[:-1])):
-                print(f"  {i+1}. {os.path.basename(file)}")
-            print("\nTo plot a specific file, use: plot <filename>")
         
         # Load the data
-        try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"Error loading data file: {e}")
-            print(f"Make sure the file exists: {os.path.abspath(json_file)}")
+        data = load_vibration_data(json_file)
+        if data is None:
+            print("No data to plot")
             return
-        
-        # Extract data from accelerometers
-        accel1 = data.get("accelerometer1", [])
-        accel2 = data.get("accelerometer2", [])
-        
-        if not accel1 or not accel2:
-            print("No accelerometer data found in file")
-            return
-        
-        # Extract timestamps and convert to seconds from start
-        timestamps1 = np.array([sample["timestamp"] for sample in accel1])
-        timestamps1 = (timestamps1 - timestamps1[0]) / 1000000.0  # Convert to seconds
-        
-        timestamps2 = np.array([sample["timestamp"] for sample in accel2])
-        timestamps2 = (timestamps2 - timestamps2[0]) / 1000000.0  # Convert to seconds
-        
-        # Extract x, y values
-        x1 = np.array([sample["x"] for sample in accel1])
-        y1 = np.array([sample["y"] for sample in accel1])
-        
-        x2 = np.array([sample["x"] for sample in accel2])
-        y2 = np.array([sample["y"] for sample in accel2])
-        
+        timestamps1 = data["timestamps1"]
+        timestamps2 = data["timestamps2"]
+        x1 = data["x1"]
+        y1 = data["y1"]
+        x2 = data["x2"]
+        y2 = data["y2"]
+        metadata = data["metadata"]
+
         # Get phase analysis data
         phase_data = fft_analysis.analyze(json_file)
         
@@ -630,7 +655,7 @@ def plot_vibration_data(json_file=None):
         # Add metadata
         metadata = data.get("metadata", {})
         if metadata:
-            sample_count = metadata.get("total_samples", len(accel1))
+            sample_count = metadata.get("total_samples", len(x1))
             timestamp = metadata.get("timestamp", "Unknown")
             frequency = metadata.get("frequency", "Unknown")
             sample_time_us = metadata.get("sample_time_us", "Unknown")
@@ -652,22 +677,6 @@ def plot_vibration_data(json_file=None):
             print(f"Plot saved to: {plot_file}")
         except Exception as e:
             print(f"Error saving plot: {e}")
-        
-        # Block=True with show() to make it modal (waits for window to close)
-        # plt.show(block=True)
-
-    # If we're in a background thread, use the main thread for plotting
-    if threading.current_thread() is not threading.main_thread():
-        print("Running plot in main thread for stability...")
-        # Schedule the plotting function to run in the main thread
-        plt.figure()  # Create a dummy figure to make sure GUI is initialized
-        plt.close()   # Close it immediately
-        
-        # Just call the plotting function directly
-        do_plot()
-    else:
-        # If we're already in the main thread, just plot directly
-        do_plot()
 
 def test_frequency_range(client, start_freq, end_freq, step_freq):
     """
