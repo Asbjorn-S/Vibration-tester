@@ -11,7 +11,6 @@ import threading
 import fft_analysis
 import communication
 matplotlib.use('TkAgg')  # Use TkAgg backend for better performance
-plt.ion()  # Enable interactive mode
 plt.ioff()  # Disable interactive mode
 
 def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
@@ -278,7 +277,7 @@ def plot_vibration_data(json_file=None):
     except Exception as e:
         print(f"Error saving plot: {e}")
 
-def test_frequency_range(client, start_freq, end_freq, step_freq):
+def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     """
     Test a range of frequencies, automatically running tests and plotting results.
     
@@ -287,8 +286,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
         start_freq: Starting frequency in Hz
         end_freq: Ending frequency in Hz (inclusive)
         step_freq: Step size between frequencies in Hz
-        amplitude: Optional amplitude value to use (uses last set amplitude if None)
-        delay_between_tests: Delay in seconds between tests to allow system to stabilize
+        ring_id: Identifier for the ring being tested (used for organizing results)
     
     Returns:
         list: List of dictionaries containing test results for each frequency
@@ -308,20 +306,22 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
         return []
         
     if start_freq < end_freq:
-        print("Error: Start frequency must be less than end frequency")
+        print("Error: Start frequency must be greater than end frequency")
         return []
+    
+    # Create ring-specific directory
+    base_dir = 'Accelerometerplotter_JSON'
+    ring_dir = os.path.join(base_dir, f"Ring_{ring_id}")
+    os.makedirs(ring_dir, exist_ok=True)
+    print(f"Saving results to: {ring_dir}")
     
     # Store results
     test_results = []
     
     # Calculate number of tests for progress tracking
-    num_tests = int((end_freq - start_freq) / step_freq) + 1
+    num_tests = int((start_freq - end_freq) / step_freq) + 1
     current_test = 1
     
-    # Define the working directory
-    data_dir = 'Accelerometerplotter_JSON'
-    
-    print(f"\nStarting frequency sweep from {start_freq} to {end_freq} Hz in {step_freq} Hz steps")
     print(f"Total tests: {num_tests}")
     
     # For each frequency
@@ -335,7 +335,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
         # Wait for test to complete and data to be processed
         # Since MQTT is asynchronous, we need to wait for the file to appear
         # Get the count of existing files
-        initial_file_count = len(glob.glob(f"{data_dir}/vibration_*.json"))
+        initial_file_count = len(glob.glob(f"{base_dir}/vibration_*.json"))
         
         print("Test initiated, waiting for data collection...")
         
@@ -349,7 +349,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
             wait_time += 1
             
             # Check for new files
-            current_files = glob.glob(f"{data_dir}/vibration_*.json")
+            current_files = glob.glob(f"{base_dir}/vibration_*.json")
             if len(current_files) > initial_file_count:
                 # Sort by modification time to find the most recent
                 current_files.sort(key=os.path.getmtime)
@@ -364,26 +364,38 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
             # Wait a bit more for any processing to finish
             time.sleep(1)
             
+            # Copy the file to the ring-specific directory with a ring-specific name
+            ring_specific_file = os.path.join(ring_dir, f"ring_{ring_id}_{os.path.basename(new_file)}")
+            
+            # Copy file contents to ring-specific directory
+            try:
+                with open(new_file, 'r') as src_file, open(ring_specific_file, 'w') as dst_file:
+                    dst_file.write(src_file.read())
+                print(f"Data saved to: {ring_specific_file}")
+            except Exception as e:
+                print(f"Error copying data file to ring directory: {e}")
+                ring_specific_file = new_file  # Fall back to original file
+            
             # Analyze the data
-            # print("Analyzing data...")
-            phase_results = fft_analysis.analyze(new_file)
+            phase_results = fft_analysis.analyze(ring_specific_file)
             
             # Store results
             test_results.append({
                 'frequency': curr_freq,
-                'file': new_file,
+                'file': ring_specific_file,
                 'phase': phase_results
             })
             
-            # Plot the data
-            plot_vibration_data(new_file)
+            # Plot the data and save to ring directory
+            # plot_file = os.path.splitext(ring_specific_file)[0] + '_plt.png'
+            plot_vibration_data(ring_specific_file)
         else:
             print(f"No data received for {curr_freq} Hz after {max_wait} seconds")
         
         # Move to next frequency
         curr_freq -= step_freq
         current_test += 1
-    # 
+    
     print("\nFrequency sweep completed.")
     
     # Summarize results
@@ -394,9 +406,9 @@ def test_frequency_range(client, start_freq, end_freq, step_freq):
         print("\nFrequency   |   X Gain   |   Y Gain   |   X Phase (deg)   |   Y Phase (deg)   |   Filename")
         print("-" * 75)
         
-        # Create CSV file for the results with timestamp in filename
+        # Create CSV file for the results with timestamp and ring ID in filename
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-        csv_filename = f"Accelerometerplotter_JSON/frequency_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv"
+        csv_filename = os.path.join(ring_dir, f"ring{ring_id}_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv")
         
         with open(csv_filename, 'w') as csvfile:
             csvfile.write("Frequency,X Gain,Y Gain,X Phase (deg),Y Phase (deg),Filename\n")

@@ -159,7 +159,7 @@ def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG, json_file=No
     
     #plt.show()
 
-def analyze(json_file=None, config=None):
+def analyze(json_file=None, config=None, doPlot=False):
     """
     Complete analysis workflow for vibration data.
     
@@ -191,8 +191,9 @@ def analyze(json_file=None, config=None):
     print("Phase difference for Y axis:")
     y_phase = calculate_phase_gain_from_fft(y_axis_fft)
     
-    # Display plots
-    display_fft_plot(x_axis_fft, y_axis_fft, config, json_file)
+    if doPlot:
+        # Display plots
+        display_fft_plot(x_axis_fft, y_axis_fft, config, json_file)
     
     return {
         "x_phase": x_phase, 

@@ -172,7 +172,7 @@ def listen_for_commands(client):
         print("7. plot [filename] - Plot vibration data (most recent if no filename specified)")
         print("8. exit - Exit the program")
         print("9. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
-        print("10. sweep <start_freq> <end_freq> <step_freq> - Run tests at multiple frequencies")
+        print("10. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
     
     # Show commands at startup
     display_help()
@@ -264,22 +264,23 @@ def listen_for_commands(client):
             elif command.startswith("sweep"):
                 try:
                     parts = command.split()
-                    if len(parts) < 4:
+                    if len(parts) < 5:
                         print("Error: Please provide start, end, and step frequencies")
-                        print("Usage: sweep <start_freq> <end_freq> <step_freq>")
+                        print("Usage: sweep <start_freq> <end_freq> <step_freq> <ring_id>")
                         continue
                         
                     start_freq = float(parts[1])
                     end_freq = float(parts[2])
                     step_freq = float(parts[3])
+                    ring_id = str(parts[4])
                     
-                    print(f"Starting frequency sweep from {start_freq} to {end_freq} Hz with {step_freq} Hz steps")
+                    print(f"Starting frequency sweep on ring {ring_id}from {start_freq} to {end_freq} Hz with {step_freq} Hz steps")
                         
-                    test_results = Accelerometerplotter.test_frequency_range(client, start_freq, end_freq, step_freq)
+                    test_results = Accelerometerplotter.test_frequency_range(client, start_freq, end_freq, step_freq, ring_id)
                     
                 except (IndexError, ValueError) as e:
                     print(f"Error: {e}")
-                    print("Usage: sweep <start_freq> <end_freq> <step_freq>")
+                    print("Usage: sweep <start_freq> <end_freq> <step_freq> <ring_id>")
                 
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
@@ -330,8 +331,8 @@ def on_message(client, userdata, msg):
                     points = calibration_data["calibration_data"]
                     print(f"Received {len(points)} calibration points")
                     
-                    # Example: Print first few points
-                    for i, point in enumerate(points[:5]):
+                    # Example: Print all points
+                    for i, point in enumerate(points):
                         print(f"  Point {i+1}: Amplitude={point['amplitude']}, Frequency={point['frequency']} Hz")
                     
                     # Save calibration data to file
