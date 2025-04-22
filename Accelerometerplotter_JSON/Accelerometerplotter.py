@@ -311,7 +311,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     
     # Create ring-specific directory
     base_dir = 'Accelerometerplotter_JSON'
-    ring_dir = os.path.join(base_dir, f"Ring_{ring_id}")
+    ring_dir = os.path.join(base_dir, f"ring_{ring_id}")
     os.makedirs(ring_dir, exist_ok=True)
     print(f"Saving results to: {ring_dir}")
     
@@ -377,7 +377,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
                 ring_specific_file = new_file  # Fall back to original file
             
             # Analyze the data
-            phase_results = fft_analysis.analyze(ring_specific_file)
+            phase_results = fft_analysis.analyze(ring_specific_file, doPlot=True)
             
             # Store results
             test_results.append({
@@ -408,7 +408,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         
         # Create CSV file for the results with timestamp and ring ID in filename
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-        csv_filename = os.path.join(ring_dir, f"ring{ring_id}_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv")
+        csv_filename = os.path.join(ring_dir, f"ring_{ring_id}_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv")
         
         with open(csv_filename, 'w') as csvfile:
             csvfile.write("Frequency,X Gain,Y Gain,X Phase (deg),Y Phase (deg),Filename\n")
@@ -431,6 +431,101 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     
     return test_results
 
+def create_bode_plot(csv_file=None):
+    """
+    Create a Bode plot from frequency sweep test results.
+    
+    Args:
+        csv_file (str, optional): Path to CSV file with sweep results. 
+                                 If None, uses the most recent CSV file.
+    
+    Returns:
+        str: Path to saved plot image or None if error
+    """
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import glob
+    import os
+    
+    # Find the most recent CSV file if none specified
+    if csv_file is None:
+        all_rings = glob.glob('Accelerometerplotter_JSON/Ring_*/ring*_sweep_*.csv')
+        if not all_rings:
+            print("No frequency sweep CSV files found")
+            return None
+        
+        all_rings.sort(key=os.path.getmtime, reverse=True)
+        csv_file = all_rings[0]
+        print(f"Using most recent sweep file: {csv_file}")
+    
+    # Check if file exists
+    if not os.path.exists(csv_file):
+        print(f"Error: File not found: {csv_file}")
+        return None
+    
+    # Load data
+    try:
+        df = pd.read_csv(csv_file)
+        # Sort by frequency for proper plotting
+        df = df.sort_values('Frequency')
+    except Exception as e:
+        print(f"Error loading CSV file: {e}")
+        return None
+    
+    # Check if expected columns exist
+    required_columns = ['Frequency', 'X Gain', 'Y Gain', 'X Phase (deg)', 'Y Phase (deg)']
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        print(f"Error: Missing required columns: {missing}")
+        return None
+    
+    # Create figure with two subplots (magnitude and phase)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig.suptitle('Bode Plot', fontsize=16)
+    
+    # Plot magnitude (gain)
+    ax1.semilogx(df['Frequency'], 20*np.log10(df['X Gain']), 'r-o', label='X Axis', markersize=4)
+    ax1.semilogx(df['Frequency'], 20*np.log10(df['Y Gain']), 'b-o', label='Y Axis', markersize=4)
+    ax1.set_ylabel('Magnitude (dB)')
+    ax1.set_title('Magnitude Response')
+    ax1.grid(True, which="both", ls="-", alpha=0.7)
+    ax1.legend()
+    
+    # Plot phase
+    ax2.semilogx(df['Frequency'], df['X Phase (deg)'], 'r-o', label='X Axis', markersize=4)
+    ax2.semilogx(df['Frequency'], df['Y Phase (deg)'], 'b-o', label='Y Axis', markersize=4)
+    ax2.set_xlabel('Frequency (Hz)')
+    ax2.set_ylabel('Phase (degrees)')
+    ax2.set_title('Phase Response')
+    ax2.grid(True, which="both", ls="-", alpha=0.7)
+    ax2.legend()
+    
+    # Extract ring ID and frequency range from filename for the plot title
+    filename = os.path.basename(csv_file)
+    try:
+        # Parse filename to get ring ID and frequency range
+        parts = filename.split('_')
+        ring_id = parts[0].replace('ring', '')
+        freq_range = parts[2].replace('Hz', '')
+        fig.suptitle(f'Bode Plot - Ring {ring_id} ({freq_range} Hz)', fontsize=16)
+    except:
+        # Use generic title if parsing fails
+        pass
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    plot_path = os.path.splitext(csv_file)[0] + '_bode.png'
+    
+    try:
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        print(f"Bode plot saved to: {plot_path}")
+    except Exception as e:
+        print(f"Error saving Bode plot: {e}")
+        return None
+        
+    plt.close(fig)
+    return plot_path
 
 def main():
     import sys

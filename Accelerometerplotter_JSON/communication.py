@@ -173,6 +173,7 @@ def listen_for_commands(client):
         print("8. exit - Exit the program")
         print("9. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
         print("10. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
+        print("11. bode [csv_file] - Create a Bode plot from sweep results (most recent if no file specified)")
     
     # Show commands at startup
     display_help()
@@ -256,10 +257,10 @@ def listen_for_commands(client):
                 if len(parts) > 1:
                     filename = ' '.join(parts[1:])
                     print(f"Calculating phase delay from file: {filename}")
-                    fft_analysis.analyze(filename)
+                    fft_analysis.analyze(filename, doPlot=True)
                 else:
                     print("Calculating phase delay from most recent data...")
-                    fft_analysis.analyze()
+                    fft_analysis.analyze(doPlot=True)
             
             elif command.startswith("sweep"):
                 try:
@@ -281,6 +282,54 @@ def listen_for_commands(client):
                 except (IndexError, ValueError) as e:
                     print(f"Error: {e}")
                     print("Usage: sweep <start_freq> <end_freq> <step_freq> <ring_id>")
+            
+            elif command.startswith("bode"):
+                parts = command.split()
+                if len(parts) > 1:
+                    # User specified a CSV file
+                    csv_file = ' '.join(parts[1:])
+                    
+                    # Normalize path separators to be consistent
+                    csv_file = csv_file.replace('\\', '/')
+                    
+                    # Handle relative paths
+                    if not os.path.isabs(csv_file):
+                        # Check if the path already contains the base directory
+                        if csv_file.lower().startswith('accelerometerplotter_json/'):
+                            # Path already has the base directory, so use as is
+                            pass
+                        else:
+                            # File is in the filename-only format
+                            if csv_file.lower().startswith('ring_'):
+                                # Extract ring ID from the filename (format: ring_ID_...)
+                                try:
+                                    # Parse out the ring ID from the filename
+                                    parts = csv_file.split('_')
+                                    if len(parts) >= 2:
+                                        ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
+                                        # Construct path with the ring directory
+                                        csv_file = f'Accelerometerplotter_JSON/ring_{ring_id}/{csv_file}'
+                                    else:
+                                        # Fallback if filename format is unexpected
+                                        csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+                                except Exception as e:
+                                    print(f"Error parsing ring ID: {e}")
+                                    csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+                            else:
+                                # No ring_ prefix, just add base directory
+                                csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+                    
+                    print(f"Creating Bode plot from CSV file: {csv_file}")
+                    
+                    # Check if file exists before proceeding
+                    if os.path.exists(csv_file):
+                        Accelerometerplotter.create_bode_plot(csv_file)
+                    else:
+                        print(f"Error: File not found: {csv_file}")
+                else:
+                    # Use most recent CSV file
+                    print("Creating Bode plot from most recent sweep results...")
+                    Accelerometerplotter.create_bode_plot()
                 
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
