@@ -378,7 +378,7 @@ def on_message(client, userdata, msg):
                     # print(f"  Accelerometer 2: {len(accel2_data)} samples")
                     
                     # Process and store the chunked data
-                    output_file = Accelerometerplotter.process_vibration_data(data, chunk_num, total_chunks)
+                    output_file = Accelerometerplotter.process_vibration_data(data, chunk_num, total_chunks, vibration_metadata)
                     
                     # If we've received all chunks and combined them, analyze the data
                     if output_file:

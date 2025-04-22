@@ -9,7 +9,7 @@ import Accelerometerplotter
 DEFAULT_CONFIG = {
     "sample_rate": 1600,
     "data_dir": "Accelerometerplotter_JSON",
-    "figure_size": (12, 6),
+    "figure_size": (6, 6),
     "labels": {
         "accel1": "Reference",
         "accel2": "O-ring"
@@ -146,10 +146,18 @@ def display_fft_plot(x_axis_fft, y_axis_fft, config=DEFAULT_CONFIG, json_file=No
     if json_file:
         # Create output filename by appending _fft to the original filename
         output_file = os.path.splitext(json_file)[0] + "_fft.png"
+        
+        # Add a counter if the file already exists
+        counter = 1
+        base_name = os.path.splitext(json_file)[0]
+        while os.path.exists(output_file):
+            output_file = f"{base_name}_fft_{counter}.png"
+            counter += 1
+        
         plt.savefig(output_file, dpi=300)
         print(f"FFT plot saved to: {output_file}")
     
-    plt.show()
+    #plt.show()
 
 def analyze(json_file=None, config=None):
     """
@@ -169,6 +177,8 @@ def analyze(json_file=None, config=None):
     data = Accelerometerplotter.load_vibration_data(json_file)
     if data is None:
         return None
+    
+    json_file = data["filename"]
     
     # Calculate FFTs
     x_axis_fft = calculate_fft(data["x1"], data["x2"], config["sample_rate"])
