@@ -14,12 +14,12 @@ void run_test(double frequency) {
 
     uint16_t nsample = 0;
     unsigned long motor_start_time = millis();
-    unsigned long previousMicros = micros(); // reset previousMicros to current time
     while (millis() - motor_start_time < 500) {} // wait for 500ms before starting sampling
+    unsigned long previousMicros = micros(); // reset previousMicros to current time
     while (true) { // Run for the test duration
       unsigned long timestamp = micros();
       if (timestamp - previousMicros >= SAMPLE_TIME) {
-        previousMicros += SAMPLE_TIME; // increment by sample time to avoid drift
+        previousMicros = timestamp; //+= SAMPLE_TIME; // increment by sample time to avoid drift
         if (nsample < NUM_SAMPLES) {
             // Sample accelerometer data
             data1[nsample] = sample_accelerometer(lis1);

@@ -4,6 +4,8 @@
 #include <wifi_mqtt.h>
 #include <ArduinoJson.h>
 
+#define DEBUG // Uncomment to enable debug prints
+
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_FREQ); // Initialize FFT object
 
 double vReal[FFT_SAMPLES]; // Real part of the FFT input
@@ -36,54 +38,100 @@ void test_frequency_v_amplitude() {
       delay(200); // Wait for 200 ms to stabilize
   
       // Measure frequency
-      unsigned long startTime = millis();
+      unsigned long actualSampleStart = micros();
       uint16_t sampleIndex = 0;
       while (sampleIndex < FFT_SAMPLES) {
-        unsigned long timestamp = micros();
         AccelerometerData sample = sample_accelerometer(lis1);
   
         // Store the accelerometer's X-axis data in the FFT input array
         vReal[sampleIndex] = sample.x; // Magnitude of acceleration vector
-        vImag[sampleIndex] = 0; // Imaginary part is zero for real input
+        vImag[sampleIndex] = 0; // Imaginary part is zero for real input 
         sampleIndex++;
   
-        // Wait for the next sample (based on the sampling frequency)
+        // Wait for next sample
         delayMicroseconds(SAMPLE_TIME);
       }
       
+      // Calculate actual sampling frequency (for debugging)
+      unsigned long actualSampleEnd = micros();
+      float actualSampleTime = (actualSampleEnd - actualSampleStart) / (float)FFT_SAMPLES;
+      float actualSampleFreq = 1000000.0 / actualSampleTime;
+      
       #ifdef DEBUG
-      // print vReal for debugging
-        // Serial.print("vReal: ");
-        // for (uint16_t i = 0; i < FFT_SAMPLES; i++) {
-        //   Serial.print(vReal[i]);
-        //   Serial.print(" ");
-        // }
-        // Serial.println();
+      Serial.print("Actual sampling time: ");
+      Serial.print(actualSampleTime);
+      Serial.println(" µs");
+      Serial.print("Actual sampling frequency: ");
+      Serial.print(actualSampleFreq);
+      Serial.println(" Hz");
       #endif
-  
-      // Perform FFT
+      
+            // Perform FFT
       FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // Apply a Hamming window
       FFT.compute(FFT_FORWARD); // Compute the FFT
       FFT.complexToMagnitude(); // Compute magnitudes
+
       double maxMagnitude = 0;
-      for (uint16_t i = 1; i < (FFT_SAMPLES / 2); i++) { // Ignore DC component at index 0
+      uint16_t peakIndex = 0;
+      
+      // Only search up to Nyquist frequency (half of sampling frequency)
+      for (uint16_t i = 1; i < (FFT_SAMPLES / 2); i++) {
         if (vReal[i] > maxMagnitude) {
           maxMagnitude = vReal[i];
-          freqData[frequencyIndex].frequency = i * (SAMPLE_FREQ / FFT_SAMPLES);
+          peakIndex = i;
         }
       }
-  
-      // Store the frequency and amplitude in the frequencyData struct
-      freqData[frequencyIndex].amplitude = amplitude;
-  
-      // Print the result for debugging
+      
+      // Calculate the exact frequency using the peak bin and ACTUAL sampling frequency
+      double peakFrequency = peakIndex * (actualSampleFreq / FFT_SAMPLES);
+      
+      // Interpolate peak for higher accuracy
+      if (peakIndex > 0 && peakIndex < (FFT_SAMPLES/2 - 1)) {
+        double leftVal = vReal[peakIndex - 1];
+        double midVal = vReal[peakIndex];
+        double rightVal = vReal[peakIndex + 1];
+        
+        // Parabolic interpolation formula
+        double delta = 0.5 * (leftVal - rightVal) / (leftVal - 2*midVal + rightVal);
+        
+        // Apply correction only if reasonable
+        if (!isnan(delta) && abs(delta) < 1.0) {
+          double interpPeakIndex = peakIndex + delta;
+          peakFrequency = interpPeakIndex * (actualSampleFreq / FFT_SAMPLES);
+        }
+      }
+      
       #ifdef DEBUG
-        // Serial.print("Amplitude: ");
-        // Serial.print(amplitude);
-        // Serial.print(" -> Frequency: ");
-        // Serial.print(peakFrequency[amplitude]);
-        // Serial.println(" Hz");
+      // Print the magnitude spectrum for debugging
+      Serial.println("FFT Magnitude Spectrum:");
+      for (uint16_t i = 0; i < 20; i++) {
+        double freq = i * (actualSampleFreq / FFT_SAMPLES);
+        Serial.print("Bin ");
+        Serial.print(i);
+        Serial.print(" (");
+        Serial.print(freq);
+        Serial.print(" Hz): ");
+        Serial.println(vReal[i]);
+      }
+      Serial.print("Peak at bin ");
+      Serial.print(peakIndex);
+      Serial.print(" (");
+      Serial.print(peakFrequency);
+      Serial.println(" Hz)");
       #endif
+      
+      // Store the frequency in the data structure
+      freqData[frequencyIndex].frequency = peakFrequency;
+      freqData[frequencyIndex].amplitude = amplitude;
+      
+      #ifdef DEBUG
+      Serial.print("Amplitude: ");
+      Serial.print(amplitude);
+      Serial.print(" -> Detected frequency: ");
+      Serial.print(peakFrequency);
+      Serial.println(" Hz");
+      #endif
+      
       frequencyIndex++;
     }
     // Turn off the motor after calibration

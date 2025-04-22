@@ -1,0 +1,25 @@
+Fix phase delay function:
+    Calculate frequencies in signal (FFT?)    
+    Use multiple methods to calculate phase delay and determine the best one
+
+Use calculated frequency in plot instead of applied frequency
+
+Create tables that summarize characteristics measured from each sweep test
+
+Eliminate outliers 
+    Run several tests
+        Identify and remove the outlier
+        Use the mean of the rest. Maybe other statistical method
+        Include standard deviation or other accuracy quantifier?
+    Improve reliability of ring placement
+
+Ring IDs
+    Pass ring ID when calling the test function and return it as metadata when testing
+    Include ring ID in file names
+
+metadata
+    Include metadata in the test data instead of sending as a separate topic, preventing mixups
+
+Split python script into multiple files
+
+Save fft plot to a file
