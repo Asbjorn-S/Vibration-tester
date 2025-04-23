@@ -422,37 +422,11 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     while curr_freq >= end_freq:
         print(f"\n[{current_test}/{num_tests}] Testing {curr_freq} Hz...")
         
-        # Run test at this frequency
-        client.publish("vibration/test", str(curr_freq))
-        
         # Wait for test to complete and data to be processed
         # Since MQTT is asynchronous, we need to wait for the file to appear
         # Get the count of existing files
-        initial_file_count = len(glob.glob(f"{base_dir}/vibration_*.json"))
         
-        print("Test initiated, waiting for data collection...")
-        
-        # Wait for new file to appear (max 20 seconds)
-        # # wait_time = 0
-        
-        # # max_wait = 20  # Maximum wait time in seconds
-        
-        # # while wait_time < max_wait:
-        # #     time.sleep(1)
-        # #     wait_time += 1
-            
-        # #     # Check for new files
-        # #     current_files = glob.glob(f"{base_dir}/vibration_*.json")
-        # #     if len(current_files) > initial_file_count:
-        # #         # Sort by modification time to find the most recent
-        # #         current_files.sort(key=os.path.getmtime)
-        # #         new_file = current_files[-1]
-        # #         print(f"Data received: {os.path.basename(new_file)}")
-        # #         break
-                
-        # #     if wait_time % 5 == 0:
-        # #         print(f"Still waiting for data... ({wait_time}s)")
-
+        max_wait = 20  # Maximum wait time in seconds
         success, new_file = send_test_command(curr_freq)
         if success:
         # Process the results...
@@ -480,7 +454,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
                     print(f"Error copying data file to test directory: {e}")
                     ring_specific_file = new_file  # Fall back to original file
 
-                # Analyze the data
+                # Analyze the data and create fft plot
                 phase_results = fft_analysis.analyze(ring_specific_file, doPlot=True)
 
                 # Store results
@@ -555,7 +529,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     
     return test_results
 
-def create_bode_plot(csv_file=None):
+def create_bode_plot(csv_file=None, interval=25):
     """
     Create a Bode plot from frequency sweep test results.
     
@@ -635,6 +609,28 @@ def create_bode_plot(csv_file=None):
     except:
         # Use generic title if parsing fails
         pass
+
+    # Set custom frequency ticks at specified interval
+    min_freq = df['Frequency'].min()
+    max_freq = df['Frequency'].max()
+    
+    # Generate tick locations at the specified interval
+    # Round min/max to nearest interval for nice bounds
+    start_tick = int(min_freq / interval) * interval
+    if start_tick < min_freq:
+        start_tick += interval
+        
+    end_tick = int(max_freq / interval) * interval
+    if end_tick > max_freq:
+        end_tick -= interval
+        
+    # Create frequency ticks
+    freq_ticks = np.arange(start_tick, end_tick + interval, interval)
+    
+    # Apply to both axes (they share x-axis)
+    ax2.set_xticks(freq_ticks)
+    ax2.set_xticklabels([f"{x}" for x in freq_ticks])
+    ax2.minorticks_off()  # Turn off minor ticks for cleaner look
     
     plt.tight_layout()
     
@@ -650,6 +646,231 @@ def create_bode_plot(csv_file=None):
         
     plt.close(fig)
     return plot_path
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    plot_path = os.path.splitext(csv_file)[0] + '_bode.png'
+    
+    try:
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        print(f"Bode plot saved to: {plot_path}")
+    except Exception as e:
+        print(f"Error saving Bode plot: {e}")
+        return None
+        
+    plt.close(fig)
+    return plot_path
+
+def create_combined_bode_plots(csv_files=None, output_name="combined_bode_plot", directory_path=None, interval=25):
+    """
+    Create Bode plots with multiple test results overlaid for comparison.
+    
+    Args:
+        csv_files (list, optional): List of CSV file paths to include in the plot.
+                                   If None, asks user to select from available files.
+        output_name (str): Base name for output plot files
+        directory_path (str, optional): Directory to search for CSV files
+                                       If None, uses the Accelerometerplotter_JSON directory.
+    
+    Returns:
+        tuple: Paths to created plot files (x_axis, y_axis)
+    """
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import glob
+    import os
+    
+    # Default to Accelerometerplotter_JSON directory if none specified
+    if directory_path is None:
+        directory_path = 'Accelerometerplotter_JSON'
+    
+    # If no files specified, find and list available ones
+    if csv_files is None:
+        all_csvs = glob.glob(os.path.join(directory_path, '**', '*sweep*.csv'), recursive=True)
+        if not all_csvs:
+            print(f"No frequency sweep CSV files found in {directory_path}")
+            return None, None
+        
+        # Show available files to choose from
+        print("\nAvailable frequency sweep files:")
+        for i, file in enumerate(all_csvs):
+            print(f"[{i+1}] {os.path.basename(file)}")
+        
+        print("\n[0] Select ALL files")
+        
+        # Get user selection
+        try:
+            selection_input = input("\nEnter file numbers to compare (comma-separated, e.g., 1,3,4) or 0 for all: ")
+            
+            # Check if user wants all files
+            if selection_input.strip() == "0":
+                csv_files = all_csvs
+                print(f"Selected all {len(csv_files)} files")
+            else:
+                indices = [int(x.strip())-1 for x in selection_input.split(",") if x.strip()]
+                csv_files = [all_csvs[i] for i in indices if 0 <= i < len(all_csvs)]
+            
+            if not csv_files:
+                print("No valid files selected")
+                return None, None
+                
+        except (ValueError, IndexError) as e:
+            print(f"Error selecting files: {e}")
+            return None, None
+    
+    # Colors for different test data
+    colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k', 'orange', 'purple', 'brown']
+    line_styles = ['-', '--', '-.', ':']
+    markers = ['o', 's', '^', 'v', 'D', '*', '+', 'x']
+    
+    # Create output directory
+    output_dir = os.path.join(directory_path, 'comparison_plots')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create two figures: X-axis only, Y-axis only
+    fig_x, (ax1_x, ax2_x) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig_y, (ax1_y, ax2_y) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    
+    # Title for the plots
+    fig_x.suptitle('X-Axis Bode Plot Comparison', fontsize=16)
+    fig_y.suptitle('Y-Axis Bode Plot Comparison', fontsize=16)
+    
+    # Legend entries
+    legend_entries = []
+    
+    # Load and plot each dataset
+    for i, csv_file in enumerate(csv_files):
+        try:
+            # Pick color, line style and marker based on index
+            color = colors[i % len(colors)]
+            line_style = line_styles[(i // len(colors)) % len(line_styles)]
+            marker = markers[(i // (len(colors) * len(line_styles))) % len(markers)]
+            plot_format = f"{color}{line_style}{marker}"
+            
+            # Load data
+            df = pd.read_csv(csv_file)
+            df = df.sort_values('Frequency')
+            
+            # Check required columns
+            required_columns = ['Frequency', 'X Gain', 'Y Gain', 'X Phase (deg)', 'Y Phase (deg)']
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                print(f"Warning: File {os.path.basename(csv_file)} is missing required columns: {missing}")
+                continue
+            
+            # Extract test info from filename
+            filename = os.path.basename(csv_file)
+            try:
+                parts = filename.split('_')
+                ring_id = parts[3] if len(parts) > 3 else "unknown"
+                test_num = parts[1] if len(parts) > 1 else "unknown"
+                legend_name = f"Ring {ring_id} - Test {test_num}"
+            except:
+                legend_name = os.path.splitext(filename)[0]
+                
+            legend_entries.append(legend_name)
+            
+            # Plot X-axis only
+            ax1_x.semilogx(df['Frequency'], 20*np.log10(df['X Gain']), plot_format, label=legend_name, markersize=4)
+            ax2_x.semilogx(df['Frequency'], df['X Phase (deg)'], plot_format, label=legend_name, markersize=4)
+            
+            # Plot Y-axis only
+            ax1_y.semilogx(df['Frequency'], 20*np.log10(df['Y Gain']), plot_format, label=legend_name, markersize=4)
+            ax2_y.semilogx(df['Frequency'], df['Y Phase (deg)'], plot_format, label=legend_name, markersize=4)
+            
+        except Exception as e:
+            print(f"Error processing {os.path.basename(csv_file)}: {e}")
+    
+    # Configure X-axis plot
+    ax1_x.set_ylabel('Magnitude (dB)')
+    ax1_x.set_title('X-Axis Magnitude Response')
+    ax1_x.grid(True, which="both", ls="-", alpha=0.7)
+    ax1_x.legend(loc='upper right', fontsize='small')
+    
+    ax2_x.set_xlabel('Frequency (Hz)')
+    ax2_x.set_ylabel('Phase (degrees)')
+    ax2_x.set_title('X-Axis Phase Response')
+    ax2_x.grid(True, which="both", ls="-", alpha=0.7)
+    ax2_x.legend(loc='upper right', fontsize='small')
+    
+    # Configure Y-axis plot
+    ax1_y.set_ylabel('Magnitude (dB)')
+    ax1_y.set_title('Y-Axis Magnitude Response')
+    ax1_y.grid(True, which="both", ls="-", alpha=0.7)
+    ax1_y.legend(loc='upper right', fontsize='small')
+    
+    ax2_y.set_xlabel('Frequency (Hz)')
+    ax2_y.set_ylabel('Phase (degrees)')
+    ax2_y.set_title('Y-Axis Phase Response')
+    ax2_y.grid(True, which="both", ls="-", alpha=0.7)
+    ax2_y.legend(loc='upper right', fontsize='small')
+    
+    # Add information about the test count
+    test_count_info = f"Comparing {len(csv_files)} tests"
+    fig_x.text(0.5, 0.01, test_count_info, ha='center', fontsize=10)
+    fig_y.text(0.5, 0.01, test_count_info, ha='center', fontsize=10)
+    
+    # Generate unique output names with timestamp
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    x_plot_path = os.path.join(output_dir, f"{output_name}_x_axis_{timestamp}.png")
+    y_plot_path = os.path.join(output_dir, f"{output_name}_y_axis_{timestamp}.png")
+
+    # Find overall min and max frequencies across all datasets
+    min_freq = float('inf')
+    max_freq = 0
+    
+    for csv_file in csv_files:
+        try:
+            df = pd.read_csv(csv_file)
+            min_freq = min(min_freq, df['Frequency'].min())
+            max_freq = max(max_freq, df['Frequency'].max())
+        except:
+            pass
+    
+    # Generate tick locations at the specified interval
+    # Round min/max to nearest interval for nice bounds
+    start_tick = int(min_freq / interval) * interval
+    if start_tick < min_freq:
+        start_tick += interval
+        
+    end_tick = int(max_freq / interval) * interval
+    if end_tick > max_freq:
+        end_tick -= interval
+    
+    # Create frequency ticks
+    freq_ticks = np.arange(start_tick, end_tick + interval, interval)
+    
+    # Apply to both plots
+    # X-axis plot
+    ax2_x.set_xticks(freq_ticks)
+    ax2_x.set_xticklabels([f"{x}" for x in freq_ticks])
+    ax2_x.minorticks_off()
+    
+    # Y-axis plot
+    ax2_y.set_xticks(freq_ticks)
+    ax2_y.set_xticklabels([f"{x}" for x in freq_ticks])
+    ax2_y.minorticks_off()
+    
+    try:
+        # Save the plots
+        fig_x.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig_x.savefig(x_plot_path, dpi=300, bbox_inches='tight')
+        plt.close(fig_x)
+        
+        fig_y.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig_y.savefig(y_plot_path, dpi=300, bbox_inches='tight')
+        plt.close(fig_y)
+        
+        print(f"\nPlots saved to: {output_dir}")
+        print(f"X-axis plot: {os.path.basename(x_plot_path)}")
+        print(f"Y-axis plot: {os.path.basename(y_plot_path)}")
+        
+    except Exception as e:
+        print(f"Error saving plots: {e}")
+        return None, None
+    
+    return x_plot_path, y_plot_path
 
 def main():
     import sys
