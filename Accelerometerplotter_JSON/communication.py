@@ -7,9 +7,9 @@ import fft_analysis
 import Accelerometerplotter
 
 
-def connect_mqtt(broker_address="mqtt.eclipseprojects.io", port=1883, client_id="", 
-                 username=None, password=None, keepalive=60, retry_interval=5, 
-                 max_retries=12):
+def connect_mqtt(broker_address="192.168.68.126", port=1883, client_id="", 
+                 username=None, password=None, keepalive=15, retry_interval=2, 
+                 max_retries=5):
     """Connect to an MQTT broker and return the client object."""
     
     reconnect_count = 0
@@ -79,17 +79,25 @@ def connect_mqtt(broker_address="mqtt.eclipseprojects.io", port=1883, client_id=
         client_id = f"accel_plotter_{hostname}_{uuid.uuid4().hex[:6]}"
     
     # Use paho MQTT v5 client for better features if available
+    is_mqtt_v5 = False
+    connect_properties = None
+    
     try:
         client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv5, 
                              callback_api_version=mqtt.CallbackAPIVersion.VERSION2, 
                              clean_session=True)
         print("Using MQTT v5 client")
+        # Only create connect_properties for MQTT v5
+        connect_properties = mqtt.Properties(mqtt.PacketTypes.CONNECT)
+        connect_properties.SessionExpiryInterval = 300  # 5 minutes
+        is_mqtt_v5 = True
     except:
         # Fall back to MQTT v3.1.1
         client = mqtt.Client(client_id=client_id, 
                              callback_api_version=mqtt.CallbackAPIVersion.VERSION2, 
                              clean_session=True)
         print("Using MQTT v3.1.1 client")
+        connect_properties = None  # No properties for MQTT v3.1.1
     
     # Set username and password if provided
     if username is not None and password is not None:
@@ -125,7 +133,12 @@ def connect_mqtt(broker_address="mqtt.eclipseprojects.io", port=1883, client_id=
     for attempt in range(1, 4):  # Try 3 times
         try:
             print(f"Connecting to MQTT broker at {broker_address}:{port} (attempt {attempt})...")
-            client.connect(broker_address, port, keepalive)
+            
+            # Only use properties with MQTT v5
+            if is_mqtt_v5:
+                client.connect(broker_address, port, keepalive, properties=connect_properties)
+            else:
+                client.connect(broker_address, port, keepalive)
             
             # Start the network loop
             client.loop_start()
@@ -199,9 +212,16 @@ def listen_for_commands(client):
                 try:
                     frequency = int(command.split()[1])
                     print(f"Running test at {frequency} Hz...")
-                    client.publish("vibration/test", str(frequency))
-                except (IndexError, ValueError):
-                    print("Error: Please provide a valid frequency (e.g., test 50)")
+                    # Use QoS 2 for critical test commands to ensure delivery
+                    msg_info = client.publish("vibration/test", str(frequency), qos=2)
+                    if not msg_info.is_published():
+                        msg_info.wait_for_publish(timeout=5)
+                        if msg_info.is_published():
+                            print("Test command delivered successfully")
+                        else:
+                            print("Warning: Test command delivery could not be confirmed")
+                except (IndexError, ValueError) as e:
+                    print(f"Error: {e}")
                     
             elif command.startswith("frequency "):
                 try:
@@ -340,6 +360,7 @@ def listen_for_commands(client):
 
 # First, add a global variable to store the metadata
 vibration_metadata = {}
+received_metadata = False
 
 def on_message(client, userdata, msg):
     """
@@ -351,7 +372,7 @@ def on_message(client, userdata, msg):
         userdata: User data (not used in this implementation)
         msg: The message object containing topic and payload
     """
-    global vibration_metadata  # Access the global metadata variable
+    global vibration_metadata, received_metadata  # Access the global metadata variable
     
     try:
         topic = msg.topic
@@ -405,6 +426,7 @@ def on_message(client, userdata, msg):
                 
                 # Store in global variable for use when processing chunks
                 vibration_metadata = metadata
+                received_metadata = True  # Set this flag when metadata is received
                 
             except json.JSONDecodeError:
                 print("Error: Failed to parse metadata JSON")

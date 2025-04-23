@@ -10,7 +10,8 @@ import matplotlib
 import threading
 import fft_analysis
 import communication
-matplotlib.use('TkAgg')  # Use TkAgg backend for better performance
+from communication import received_metadata
+matplotlib.use('Agg')  # Use non-interactive backend for plots
 plt.ioff()  # Disable interactive mode
 
 def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
@@ -295,6 +296,76 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     import os
     import glob
     
+    # Reset metadata flag before testing
+    import communication
+    communication.received_metadata = False
+
+    new_file = None
+
+    def send_test_command(freq, max_retries=3):
+        initial_file_count = len(glob.glob(f"{base_dir}/vibration_*.json"))
+        initial_metadata_received = False
+        
+        for attempt in range(1, max_retries + 1):
+            print(f"Sending test command for {freq} Hz (attempt {attempt}/{max_retries})...")
+            
+            # Send command with QoS 2
+            msg_info = client.publish("vibration/test", str(freq), qos=2)
+            msg_delivered = msg_info.wait_for_publish(timeout=2)
+            
+            if not msg_delivered:
+                print(f"Warning: Message delivery not confirmed, retrying...")
+                # Continue waiting for data even if message delivery isn't confirmed
+                # The message might still have been delivered
+            
+            # Wait for data
+            wait_time = 0
+            while wait_time < 10:  # Shortened timeout since we're checking for both metadata and files
+                time.sleep(1)
+                wait_time += 1
+                
+                # Check for new data files
+                current_files = glob.glob(f"{base_dir}/vibration_*.json")
+                if len(current_files) > initial_file_count:
+                    newest_file = max(current_files, key=os.path.getmtime)
+                    print(f"New data file detected: {os.path.basename(newest_file)}")
+                    time.sleep(2)  # Give it a moment to complete writing
+                    return True, newest_file
+                
+                # Also check if metadata was received, which indicates test started
+                global received_metadata
+                if received_metadata and not initial_metadata_received:
+                    initial_metadata_received = True
+                    print("Test in progress (metadata received)...")
+                    
+                # Status update
+                if wait_time % 5 == 0 and wait_time > 0:
+                    print(f"Still waiting for data... ({wait_time}s)")
+                    
+                    # Check if client is still connected
+                    if not client.is_connected():
+                        print("MQTT connection lost during wait! Reconnecting...")
+                        try:
+                            client.reconnect()
+                        except Exception as e:
+                            print(f"Reconnect failed: {e}")
+                            
+            # If we reach here with metadata but no file, wait a bit longer
+            if initial_metadata_received:
+                print("Metadata received but still waiting for data file...")
+                
+                # Extended wait for the file
+                for extended_wait in range(10):
+                    time.sleep(1)
+                    current_files = glob.glob(f"{base_dir}/vibration_*.json")
+                    if len(current_files) > initial_file_count:
+                        newest_file = max(current_files, key=os.path.getmtime)
+                        return True, newest_file
+                        
+                print("Timed out waiting for data file after metadata was received")
+                
+        return False, None  # Failed after all retries
+    
     # Check if client is connected
     if not client or not client.is_connected():
         print("MQTT client not connected. Cannot run tests.")
@@ -313,7 +384,29 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
     base_dir = 'Accelerometerplotter_JSON'
     ring_dir = os.path.join(base_dir, f"ring_{ring_id}")
     os.makedirs(ring_dir, exist_ok=True)
-    print(f"Saving results to: {ring_dir}")
+    
+    # Find the next available test number
+    test_dirs = glob.glob(os.path.join(ring_dir, "test_*"))
+    if test_dirs:
+        test_numbers = []
+        for d in test_dirs:
+            # Only consider directories, not files
+            if os.path.isdir(d):
+                try:
+                    # Extract the number after "test_"
+                    test_num_str = os.path.basename(d).split("_")[-1] 
+                    test_numbers.append(int(test_num_str))
+                except ValueError:
+                    # Skip if conversion to int fails
+                    continue
+        test_num = max(test_numbers) + 1 if test_numbers else 1
+    else:
+        test_num = 1
+    
+    # Create test-specific directory
+    test_dir = os.path.join(ring_dir, f"test_{test_num}")
+    os.makedirs(test_dir, exist_ok=True)
+    print(f"Saving results to: {test_dir}")
     
     # Store results
     test_results = []
@@ -340,61 +433,73 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         print("Test initiated, waiting for data collection...")
         
         # Wait for new file to appear (max 20 seconds)
-        wait_time = 0
-        new_file = None
-        max_wait = 20  # Maximum wait time in seconds
+        # # wait_time = 0
         
-        while wait_time < max_wait:
-            time.sleep(1)
-            wait_time += 1
+        # # max_wait = 20  # Maximum wait time in seconds
+        
+        # # while wait_time < max_wait:
+        # #     time.sleep(1)
+        # #     wait_time += 1
             
-            # Check for new files
-            current_files = glob.glob(f"{base_dir}/vibration_*.json")
-            if len(current_files) > initial_file_count:
-                # Sort by modification time to find the most recent
-                current_files.sort(key=os.path.getmtime)
-                new_file = current_files[-1]
-                print(f"Data received: {os.path.basename(new_file)}")
-                break
+        # #     # Check for new files
+        # #     current_files = glob.glob(f"{base_dir}/vibration_*.json")
+        # #     if len(current_files) > initial_file_count:
+        # #         # Sort by modification time to find the most recent
+        # #         current_files.sort(key=os.path.getmtime)
+        # #         new_file = current_files[-1]
+        # #         print(f"Data received: {os.path.basename(new_file)}")
+        # #         break
                 
-            if wait_time % 5 == 0:
-                print(f"Still waiting for data... ({wait_time}s)")
-        
-        if new_file:
-            # Wait a bit more for any processing to finish
-            time.sleep(1)
-            
-            # Copy the file to the ring-specific directory with a ring-specific name
-            ring_specific_file = os.path.join(ring_dir, f"ring_{ring_id}_{os.path.basename(new_file)}")
-            
-            # Copy file contents to ring-specific directory
-            try:
-                with open(new_file, 'r') as src_file, open(ring_specific_file, 'w') as dst_file:
-                    dst_file.write(src_file.read())
-                print(f"Data saved to: {ring_specific_file}")
-            except Exception as e:
-                print(f"Error copying data file to ring directory: {e}")
-                ring_specific_file = new_file  # Fall back to original file
-            
-            # Analyze the data
-            phase_results = fft_analysis.analyze(ring_specific_file, doPlot=True)
-            
-            # Store results
-            test_results.append({
-                'frequency': curr_freq,
-                'file': ring_specific_file,
-                'phase': phase_results
-            })
-            
-            # Plot the data and save to ring directory
-            # plot_file = os.path.splitext(ring_specific_file)[0] + '_plt.png'
-            plot_vibration_data(ring_specific_file)
+        # #     if wait_time % 5 == 0:
+        # #         print(f"Still waiting for data... ({wait_time}s)")
+
+        success, new_file = send_test_command(curr_freq)
+        if success:
+        # Process the results...
+            if new_file:
+                # Wait a bit more for any processing to finish
+                time.sleep(1)
+
+                # Keep original filename but place in test-specific directory
+                ring_specific_file = os.path.join(test_dir, f"ring_{ring_id}_{os.path.basename(new_file)}")
+
+                # Copy file contents to test directory
+                try:
+                    with open(new_file, 'r') as src_file, open(ring_specific_file, 'w') as dst_file:
+                        dst_file.write(src_file.read())
+                    print(f"Data saved to: {ring_specific_file}")
+
+                    # Delete the original file after successful copy
+                    try:
+                        os.remove(new_file)
+                        print(f"Original file removed: {new_file}")
+                    except Exception as e:
+                        print(f"Warning: Could not remove original file: {e}")
+
+                except Exception as e:
+                    print(f"Error copying data file to test directory: {e}")
+                    ring_specific_file = new_file  # Fall back to original file
+
+                # Analyze the data
+                phase_results = fft_analysis.analyze(ring_specific_file, doPlot=True)
+
+                # Store results
+                test_results.append({
+                    'frequency': curr_freq,
+                    'file': ring_specific_file,
+                    'phase': phase_results
+                })
+
+                # Plot the data and save to test directory (plot_vibration_data saves to same dir as source)
+                plot_vibration_data(ring_specific_file)
+            else:
+                print(f"No data received for {curr_freq} Hz after {max_wait} seconds")
+
+            # Move to next frequency
+            curr_freq -= step_freq
+            current_test += 1
         else:
-            print(f"No data received for {curr_freq} Hz after {max_wait} seconds")
-        
-        # Move to next frequency
-        curr_freq -= step_freq
-        current_test += 1
+            print(f"Test failed for {curr_freq} Hz after multiple attempts")
     
     print("\nFrequency sweep completed.")
     
@@ -406,32 +511,47 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         print("\nFrequency   |   X Gain   |   Y Gain   |   X Phase (deg)   |   Y Phase (deg)   |   Filename")
         print("-" * 75)
         
-        # Create CSV file for the results with timestamp and ring ID in filename
-        timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-        csv_filename = os.path.join(ring_dir, f"ring_{ring_id}_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv")
+        # Create CSV file for the results with test number in the ring directory
+        timestamp = time.strftime("%Y-%m-%d_%H-%M")
+        csv_filename = os.path.join(ring_dir, f"test_{test_num}_ring_{ring_id}_sweep_{start_freq}-{end_freq}Hz_{timestamp}.csv")
         
         with open(csv_filename, 'w') as csvfile:
             csvfile.write("Frequency,X Gain,Y Gain,X Phase (deg),Y Phase (deg),Filename\n")
             
             for result in test_results:
-                if phase_x < 0: 
-                    phase_x += 360
-                if phase_y < 0:
-                    phase_y += 360
-                freq = result['phase']['x_phase']['dominant_freq']
-                gain_x = result['phase']['x_phase']['gain']
-                gain_y = result['phase']['y_phase']['gain']
-                phase_x = result['phase']['x_phase']["phase_diff_deg"]
-                phase_y = result['phase']['y_phase']["phase_diff_deg"]
-                filename = os.path.basename(result['file'])
-                
-                # Print to console
-                print(f"{freq:8.2f}   |   {gain_x:6.2f}   |   {gain_y:6.2f}   |   {phase_x:12.2f}   |   {phase_y:12.2f}   |   {filename}")
-                
-                # Write to CSV
-                csvfile.write(f"{freq},{gain_x},{gain_y},{phase_x},{phase_y},{filename}\n")
+                try:
+                    freq = result['frequency']  # Use the actual test frequency, not the measured one
+                    if not result['phase'] or 'x_phase' not in result['phase'] or 'y_phase' not in result['phase']:
+                        print(f"Warning: Missing phase data for {freq} Hz test, skipping in CSV")
+                        continue
+                        
+                    gain_x = result['phase']['x_phase']['gain']
+                    gain_y = result['phase']['y_phase']['gain']
+                    phase_x = result['phase']['x_phase']["phase_diff_deg"]
+                    phase_y = result['phase']['y_phase']["phase_diff_deg"]
+                    
+                    # Convert negative phases to 0-360 range
+                    if phase_x < 0: 
+                        phase_x += 360
+                    if phase_y < 0:
+                        phase_y += 360
+                        
+                    filename = os.path.basename(result['file'])
+                    
+                    # Print to console
+                    print(f"{freq:8.2f}   |   {gain_x:6.2f}   |   {gain_y:6.2f}   |   {phase_x:12.2f}   |   {phase_y:12.2f}   |   {filename}")
+                    
+                    # Write to CSV
+                    csvfile.write(f"{freq},{gain_x},{gain_y},{phase_x},{phase_y},{filename}\n")
+                except Exception as e:
+                    print(f"Error processing result for frequency {result.get('frequency', 'unknown')}: {e}")
         
         print(f"\nTest results saved to: {csv_filename}")
+        
+        # Create a Bode plot automatically for this sweep
+        bode_plot_path = create_bode_plot(csv_filename)
+        if bode_plot_path:
+            print(f"Bode plot created: {bode_plot_path}")
     
     return test_results
 
@@ -509,8 +629,8 @@ def create_bode_plot(csv_file=None):
     try:
         # Parse filename to get ring ID and frequency range
         parts = filename.split('_')
-        ring_id = parts[1]
-        freq_range = parts[3].replace('Hz', '')
+        ring_id = parts[3]
+        freq_range = parts[5].replace('Hz', '')
         fig.suptitle(f'Bode Plot - Ring {ring_id} ({freq_range} Hz)', fontsize=16)
     except:
         # Use generic title if parsing fails
@@ -534,7 +654,7 @@ def create_bode_plot(csv_file=None):
 def main():
     import sys
     # Set up MQTT connection to broker
-    client = communication.connect_mqtt(broker_address="192.168.68.128", port=1883, 
+    client = communication.connect_mqtt(broker_address="192.168.68.126", port=1883, 
                          client_id="AccelerometerPlotter", 
                          keepalive=15)  # Reduced keepalive time
 
