@@ -414,6 +414,10 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
             csvfile.write("Frequency,X Gain,Y Gain,X Phase (deg),Y Phase (deg),Filename\n")
             
             for result in test_results:
+                if phase_x < 0: 
+                    phase_x += 360
+                if phase_y < 0:
+                    phase_y += 360
                 freq = result['phase']['x_phase']['dominant_freq']
                 gain_x = result['phase']['x_phase']['gain']
                 gain_y = result['phase']['y_phase']['gain']
@@ -505,8 +509,8 @@ def create_bode_plot(csv_file=None):
     try:
         # Parse filename to get ring ID and frequency range
         parts = filename.split('_')
-        ring_id = parts[0].replace('ring', '')
-        freq_range = parts[2].replace('Hz', '')
+        ring_id = parts[1]
+        freq_range = parts[3].replace('Hz', '')
         fig.suptitle(f'Bode Plot - Ring {ring_id} ({freq_range} Hz)', fontsize=16)
     except:
         # Use generic title if parsing fails
