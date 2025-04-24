@@ -23,3 +23,5 @@ metadata
 Split python script into multiple files
 
 Save fft plot to a file
+
+sweep is sending test twice

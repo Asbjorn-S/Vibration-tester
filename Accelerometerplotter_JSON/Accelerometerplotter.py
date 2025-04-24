@@ -494,11 +494,11 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
             
             for result in test_results:
                 try:
-                    freq = result['frequency']  # Use the actual test frequency, not the measured one
+                    # Check if phase data is available
                     if not result['phase'] or 'x_phase' not in result['phase'] or 'y_phase' not in result['phase']:
                         print(f"Warning: Missing phase data for {freq} Hz test, skipping in CSV")
                         continue
-                        
+                    freq = result['phase']['x_phase']['dominant_freq']
                     gain_x = result['phase']['x_phase']['gain']
                     gain_y = result['phase']['y_phase']['gain']
                     phase_x = result['phase']['x_phase']["phase_diff_deg"]
@@ -662,7 +662,7 @@ def create_bode_plot(csv_file=None, interval=25):
     plt.close(fig)
     return plot_path
 
-def create_combined_bode_plots(csv_files=None, output_name="combined_bode_plot", directory_path=None, interval=25):
+def create_combined_bode_plot(csv_files=None, output_name="combined_bode_plot", directory_path=None, interval=25):
     """
     Create Bode plots with multiple test results overlaid for comparison.
     
@@ -746,7 +746,9 @@ def create_combined_bode_plots(csv_files=None, output_name="combined_bode_plot",
             color = colors[i % len(colors)]
             line_style = line_styles[(i // len(colors)) % len(line_styles)]
             marker = markers[(i // (len(colors) * len(line_styles))) % len(markers)]
-            plot_format = f"{color}{line_style}{marker}"
+            
+            # Don't combine them into a single format string
+            # Instead, pass them as separate parameters
             
             # Load data
             df = pd.read_csv(csv_file)
@@ -771,13 +773,21 @@ def create_combined_bode_plots(csv_files=None, output_name="combined_bode_plot",
                 
             legend_entries.append(legend_name)
             
-            # Plot X-axis only
-            ax1_x.semilogx(df['Frequency'], 20*np.log10(df['X Gain']), plot_format, label=legend_name, markersize=4)
-            ax2_x.semilogx(df['Frequency'], df['X Phase (deg)'], plot_format, label=legend_name, markersize=4)
+            # Plot X-axis only - passing color, linestyle, marker separately
+            ax1_x.semilogx(df['Frequency'], 20*np.log10(df['X Gain']), 
+                          color=color, linestyle=line_style, marker=marker, 
+                          label=legend_name, markersize=4)
+            ax2_x.semilogx(df['Frequency'], df['X Phase (deg)'], 
+                          color=color, linestyle=line_style, marker=marker, 
+                          label=legend_name, markersize=4)
             
-            # Plot Y-axis only
-            ax1_y.semilogx(df['Frequency'], 20*np.log10(df['Y Gain']), plot_format, label=legend_name, markersize=4)
-            ax2_y.semilogx(df['Frequency'], df['Y Phase (deg)'], plot_format, label=legend_name, markersize=4)
+            # Plot Y-axis only - passing color, linestyle, marker separately
+            ax1_y.semilogx(df['Frequency'], 20*np.log10(df['Y Gain']), 
+                          color=color, linestyle=line_style, marker=marker, 
+                          label=legend_name, markersize=4)
+            ax2_y.semilogx(df['Frequency'], df['Y Phase (deg)'], 
+                          color=color, linestyle=line_style, marker=marker, 
+                          label=legend_name, markersize=4)
             
         except Exception as e:
             print(f"Error processing {os.path.basename(csv_file)}: {e}")
@@ -875,7 +885,7 @@ def create_combined_bode_plots(csv_files=None, output_name="combined_bode_plot",
 def main():
     import sys
     # Set up MQTT connection to broker
-    client = communication.connect_mqtt(broker_address="192.168.68.126", port=1883, 
+    client = communication.connect_mqtt(broker_address="192.168.68.128", port=1883, 
                          client_id="AccelerometerPlotter", 
                          keepalive=15)  # Reduced keepalive time
 

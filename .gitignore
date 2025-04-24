@@ -9,3 +9,6 @@ Accelerometerplotter_JSON/*.csv
 Accelerometerplotter_JSON/first_sweep/**
 Accelerometerplotter_JSON/Ring*/**
 Accelerometerplotter_JSON/shallow_groove/**
+Accelerometerplotter_JSON/sweep_varying_pressure_freq_error/**
+Accelerometerplotter_JSON/comparison_plots/**
+Accelerometerplotter_JSON/compare_rings/**

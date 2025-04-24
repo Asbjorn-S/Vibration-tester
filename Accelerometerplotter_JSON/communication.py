@@ -187,6 +187,7 @@ def listen_for_commands(client):
         print("9. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
         print("10. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
         print("11. bode [csv_file] - Create a Bode plot from sweep results (most recent if no file specified)")
+        print("12. combinedbode <directory> - Create a combined Bode plot from selected CSV files in the directory")
     
     # Show commands at startup
     display_help()
@@ -350,6 +351,32 @@ def listen_for_commands(client):
                     # Use most recent CSV file
                     print("Creating Bode plot from most recent sweep results...")
                     Accelerometerplotter.create_bode_plot()
+            elif command.startswith("combinedbode"):
+                parts = command.split()
+                if len(parts) > 1:
+                    # User specified a directory
+                    directory = ' '.join(parts[1:])
+                    
+                    # Normalize path separators to be consistent
+                    directory = directory.replace('\\', '/')
+                    
+                    # Check if the path is absolute or relative
+                    if not os.path.isabs(directory):
+                        # If it's a relative path, prepend the base directory
+                        if not directory.lower().startswith('accelerometerplotter_json/'):
+                            directory = f'Accelerometerplotter_JSON/{directory}'
+                    
+                    print(f"Creating combined Bode plot from CSV files in directory: {directory}")
+                    
+                    # Check if the directory exists before proceeding
+                    if os.path.isdir(directory):
+                        # Pass the directory as directory_path parameter, not as the first argument
+                        Accelerometerplotter.create_combined_bode_plot(directory_path=directory)
+                    else:
+                        print(f"Error: Directory not found: {directory}")
+                else:
+                    print("Error: Please specify a directory containing CSV files")
+                    print("Usage: combinedbode <directory>")
                 
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
