@@ -14,6 +14,8 @@ from communication import received_metadata
 matplotlib.use('Agg')  # Use non-interactive backend for plots
 plt.ioff()  # Disable interactive mode
 
+onlineMode = False  # Set to True if using MQTT broker for real-time data
+
 def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
     """
     Process and store vibration data from chunked MQTT messages.
@@ -1098,72 +1100,188 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
     
     return output_file
 
+def offline_commands():
+    # Get user input
+    command = input("\nEnter command: ").strip().lower()
+    if command.startswith("bode"):
+        # Call the Bode plot function
+        parts = command.split()
+        if len(parts) > 1:
+            # User specified a CSV file
+            csv_file = ' '.join(parts[1:])
+            
+            # Normalize path separators to be consistent
+            csv_file = csv_file.replace('\\', '/')
+            
+            # Handle relative paths
+            if not os.path.isabs(csv_file):
+                # Check if the path already contains the base directory
+                if csv_file.lower().startswith('accelerometerplotter_json/'):
+                    # Path already has the base directory, so use as is
+                    pass
+                else:
+                    # File is in the filename-only format
+                    if csv_file.lower().startswith('ring_'):
+                        # Extract ring ID from the filename (format: ring_ID_...)
+                        try:
+                            # Parse out the ring ID from the filename
+                            parts = csv_file.split('_')
+                            if len(parts) >= 2:
+                                ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
+                                # Construct path with the ring directory
+                                csv_file = f'Accelerometerplotter_JSON/ring_{ring_id}/{csv_file}'
+                            else:
+                                # Fallback if filename format is unexpected
+                                csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+                        except Exception as e:
+                            print(f"Error parsing ring ID: {e}")
+                            csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+                    else:
+                        # No ring_ prefix, just add base directory
+                        csv_file = f'Accelerometerplotter_JSON/{csv_file}'
+            
+            print(f"Creating Bode plot from CSV file: {csv_file}")
+                                # Check if file exists before proceeding
+            if os.path.exists(csv_file):
+                create_bode_plot(csv_file)
+            else:
+                print(f"Error: File not found: {csv_file}")
+        else:
+            # Use most recent CSV file
+            print("Creating Bode plot from most recent sweep results...")
+            create_bode_plot()
+    elif command.startswith("combinedbode"):
+        parts = command.split()
+        if len(parts) > 1:
+            # User specified a directory
+            directory = ' '.join(parts[1:])
+            
+            # Normalize path separators to be consistent
+            directory = directory.replace('\\', '/')
+            
+            # Check if the path is absolute or relative
+            if not os.path.isabs(directory):
+                # If it's a relative path, prepend the base directory
+                if not directory.lower().startswith('accelerometerplotter_json/'):
+                    directory = f'Accelerometerplotter_JSON/{directory}'
+            
+            print(f"Creating combined Bode plot from CSV files in directory: {directory}")
+            
+            # Check if the directory exists before proceeding
+            if os.path.isdir(directory):
+                # Pass the directory as directory_path parameter, not as the first argument
+                create_combined_bode_plot(directory_path=directory)
+            else:
+                print(f"Error: Directory not found: {directory}")
+        else:
+            print("Error: Please specify a directory containing CSV files")
+            print("Usage: combinedbode <directory>")
+    elif command.startswith("stats"):
+        # Call the statistics function
+        parts = command.split()
+        if len(parts) > 1:
+            # User specified a directory
+            directory = ' '.join(parts[1:])
+            
+            # Normalize path separators to be consistent
+            directory = directory.replace('\\', '/')
+            
+            # Check if the path is absolute or relative
+            if not os.path.isabs(directory):
+                # If it's a relative path, prepend the base directory
+                if not directory.lower().startswith('accelerometerplotter_json/'):
+                    directory = f'Accelerometerplotter_JSON/{directory}'
+            
+            print(f"Calculating statistics from CSV files in directory: {directory}")
+            
+            # Check if the directory exists before proceeding
+            if os.path.isdir(directory):
+                # Pass the directory as directory_path parameter, not as the first argument
+                calculate_sweep_statistics(directory_path=directory)
+            else:
+                print(f"Error: Directory not found: {directory}")
+        else:
+            print("Error: Please specify a directory containing CSV files")
+            print("Usage: stats <directory>")
+    else:
+        print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
+
 def main():
-    import sys
-    # Set up MQTT connection to broker
-    client = communication.connect_mqtt(broker_address="192.168.68.128", port=1883, 
-                         client_id="AccelerometerPlotter", 
-                         keepalive=15)  # Reduced keepalive time
+    if onlineMode:
+        import sys
+        # Set up MQTT connection to broker
+        client = communication.connect_mqtt(broker_address="192.168.68.128", port=1883, 
+                             client_id="AccelerometerPlotter", 
+                             keepalive=15)  # Reduced keepalive time
 
-    if not client:
-        print("Failed to establish initial connection to MQTT broker. Exiting.")
-        return
+        if not client:
+            print("Failed to establish initial connection to MQTT broker. Exiting.")
+            return
 
-    communication.setup_mqtt_callbacks(client)
-    
-    # Create a separate thread for heartbeat
-    def heartbeat_thread():
-        last_heartbeat = time.time()
-        heartbeat_interval = 30  # Reduced interval for more frequent checks
-        
+        communication.setup_mqtt_callbacks(client)
+
+        # Create a separate thread for heartbeat
+        def heartbeat_thread():
+            last_heartbeat = time.time()
+            heartbeat_interval = 30  # Reduced interval for more frequent checks
+
+            while True:
+                try:
+                    current_time = time.time()
+
+                    # Send heartbeat every 10 seconds
+                    if current_time - last_heartbeat > heartbeat_interval:
+                        if client.is_connected():
+                            # print("Sending heartbeat...")
+                            client.publish("vibration/heartbeat", str(current_time), qos=1)
+                            last_heartbeat = current_time
+                        else:
+                            print("Connection lost. Attempting to reconnect...")
+                            try:
+                                client.reconnect()
+                                # Re-subscribe on successful reconnection
+                                if client.is_connected():
+                                    communication.setup_mqtt_callbacks(client)
+                                    print("Reconnected and resubscribed to topics")
+                            except Exception as e:
+                                print(f"Reconnection failed: {e}")
+
+                    time.sleep(2)  # Check connection every 2 seconds
+
+                except Exception as e:
+                    print(f"Error in heartbeat thread: {e}")
+                    time.sleep(5)  # Wait before retrying after an error
+
+        # Start heartbeat in a daemon thread
+        hb_thread = threading.Thread(target=heartbeat_thread, daemon=True)
+        hb_thread.start()
+
+        # Main program logic
+        try:
+            print("Program running. Press Ctrl+C to exit.")
+            # Use your original command listener
+            communication.listen_for_commands(client)
+        except KeyboardInterrupt:
+            print("Program terminated by user")
+        finally:
+            # Ensure clean disconnect
+            print("Shutting down...")
+            try:
+                client.publish("vibration/status", "offline", qos=1, retain=True)
+                client.loop_stop()
+                client.disconnect()
+            except:
+                pass
+    else:
+        print("Running in offline mode. Enter commands manually.")
         while True:
             try:
-                current_time = time.time()
-                
-                # Send heartbeat every 10 seconds
-                if current_time - last_heartbeat > heartbeat_interval:
-                    if client.is_connected():
-                        # print("Sending heartbeat...")
-                        client.publish("vibration/heartbeat", str(current_time), qos=1)
-                        last_heartbeat = current_time
-                    else:
-                        print("Connection lost. Attempting to reconnect...")
-                        try:
-                            client.reconnect()
-                            # Re-subscribe on successful reconnection
-                            if client.is_connected():
-                                communication.setup_mqtt_callbacks(client)
-                                print("Reconnected and resubscribed to topics")
-                        except Exception as e:
-                            print(f"Reconnection failed: {e}")
-                
-                time.sleep(2)  # Check connection every 2 seconds
-                
+                offline_commands()
+            except KeyboardInterrupt:
+                print("\nExiting offline mode.")
+                break
             except Exception as e:
-                print(f"Error in heartbeat thread: {e}")
-                time.sleep(5)  # Wait before retrying after an error
-    
-    # Start heartbeat in a daemon thread
-    hb_thread = threading.Thread(target=heartbeat_thread, daemon=True)
-    hb_thread.start()
-    
-    # Main program logic
-    try:
-        print("Program running. Press Ctrl+C to exit.")
-        # Use your original command listener
-        communication.listen_for_commands(client)
-    except KeyboardInterrupt:
-        print("Program terminated by user")
-    finally:
-        # Ensure clean disconnect
-        print("Shutting down...")
-        try:
-            client.publish("vibration/status", "offline", qos=1, retain=True)
-            client.loop_stop()
-            client.disconnect()
-        except:
-            pass
-
+                print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
