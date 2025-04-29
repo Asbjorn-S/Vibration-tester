@@ -383,7 +383,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         return []
     
     # Create ring-specific directory
-    base_dir = 'Accelerometerplotter_JSON'
+    base_dir = 'Accelerometerplotter_JSON/rings'
     ring_dir = os.path.join(base_dir, f"ring_{ring_id}")
     os.makedirs(ring_dir, exist_ok=True)
     
@@ -549,7 +549,7 @@ def create_bode_plot(csv_file=None, interval=25):
     
     # Find the most recent CSV file if none specified
     if csv_file is None:
-        all_rings = glob.glob('Accelerometerplotter_JSON/Ring_*/ring*_sweep_*.csv')
+        all_rings = glob.glob('Accelerometerplotter_JSON/rings/ring_*/ring*_sweep_*.csv')
         if not all_rings:
             print("No frequency sweep CSV files found")
             return None
@@ -670,7 +670,7 @@ def create_combined_bode_plot(csv_files=None, output_name="combined_bode_plot", 
     
     # Default to Accelerometerplotter_JSON directory if none specified
     if directory_path is None:
-        directory_path = 'Accelerometerplotter_JSON'
+        directory_path = 'Accelerometerplotter_JSON/rings'
     
     # If no files specified, find and list available ones
     if csv_files is None:
@@ -893,7 +893,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep", director
     
     # Default to Accelerometerplotter_JSON directory if none specified
     if directory_path is None:
-        directory_path = 'Accelerometerplotter_JSON'
+        directory_path = 'Accelerometerplotter_JSON/rings'
     
     # Extract ring_id from directory path if it follows the pattern "ring_{ring_id}"
     ring_id = "unknown"
@@ -1343,7 +1343,7 @@ def offline_commands():
             # Handle relative paths
             if not os.path.isabs(csv_file):
                 # Check if the path already contains the base directory
-                if csv_file.lower().startswith('accelerometerplotter_json/'):
+                if csv_file.lower().startswith('accelerometerplotter_json/rings/'):
                     # Path already has the base directory, so use as is
                     pass
                 else:
@@ -1356,7 +1356,7 @@ def offline_commands():
                             if len(parts) >= 2:
                                 ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
                                 # Construct path with the ring directory
-                                csv_file = f'Accelerometerplotter_JSON/ring_{ring_id}/{csv_file}'
+                                csv_file = f'Accelerometerplotter_JSON/rings/ring_{ring_id}/{csv_file}'
                             else:
                                 # Fallback if filename format is unexpected
                                 csv_file = f'Accelerometerplotter_JSON/{csv_file}'
@@ -1390,7 +1390,7 @@ def offline_commands():
             if not os.path.isabs(directory):
                 # If it's a relative path, prepend the base directory
                 if not directory.lower().startswith('accelerometerplotter_json/'):
-                    directory = f'Accelerometerplotter_JSON/{directory}'
+                    directory = f'Accelerometerplotter_JSON/rings/{directory}'
             
             print(f"Creating combined Bode plot from CSV files in directory: {directory}")
             
@@ -1417,7 +1417,7 @@ def offline_commands():
             if not os.path.isabs(directory):
                 # If it's a relative path, prepend the base directory
                 if not directory.lower().startswith('accelerometerplotter_json/'):
-                    directory = f'Accelerometerplotter_JSON/{directory}'
+                    directory = f'Accelerometerplotter_JSON/rings/{directory}'
             
             print(f"Calculating statistics from CSV files in directory: {directory}")
             
