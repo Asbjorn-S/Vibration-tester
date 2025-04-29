@@ -869,7 +869,7 @@ def create_combined_bode_plot(csv_files=None, output_name="combined_bode_plot", 
     
     return x_plot_path, y_plot_path
 
-def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", directory_path=None):
+def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep", directory_path=None):
     """
     Calculate average and standard deviation from multiple frequency sweep CSV files.
     Handles frequency mismatches through interpolation.
@@ -894,6 +894,12 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
     # Default to Accelerometerplotter_JSON directory if none specified
     if directory_path is None:
         directory_path = 'Accelerometerplotter_JSON'
+    
+    # Extract ring_id from directory path if it follows the pattern "ring_{ring_id}"
+    ring_id = "unknown"
+    dir_name = os.path.basename(directory_path)
+    if dir_name.startswith("ring_"):
+        ring_id = dir_name.split("_", 1)[1]  # Get everything after "ring_"
     
     # If no files specified, find and list available ones
     if csv_files is None:
@@ -1046,12 +1052,13 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
     })
     
     # Create output directory
-    output_dir = os.path.join(directory_path, 'statistics')
+    output_dir = os.path.join('Accelerometerplotter_JSON', 'statistics')
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save to CSV
+    # Save to CSV using the desired format with ring_id
     timestamp = time.strftime("%Y%m%d_%H%M")
-    output_file = os.path.join(output_dir, f"{output_name}_{timestamp}.csv")
+    filename = f"{output_name}_{ring_id}_{timestamp}.csv"
+    output_file = os.path.join(output_dir, filename)
     
     output_df.to_csv(output_file, index=False, float_format='%.6f')
     print(f"\nStatistics saved to: {output_file}")
@@ -1062,7 +1069,8 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         
         # Create figure
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-        fig.suptitle('Frequency Sweep Statistics', fontsize=16)
+        fig_title = f'Frequency Statistics - Ring {ring_id}'
+        fig.suptitle(fig_title, fontsize=16)
         
         # Convert gain to dB for plotting
         mean_x_gain_db = 20 * np.log10(mean_x_gain)
@@ -1075,7 +1083,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         # Plot X-axis gain with shaded error region
         ax1.plot(common_frequencies, mean_x_gain_db, 'r-', label='X Axis Mean', linewidth=2)
         ax1.fill_between(common_frequencies, x_gain_lower_db, x_gain_upper_db, 
-                        color='red', alpha=0.2, label='X Axis Std Dev')
+                        color='red', alpha=0.2)
         
         ax1.set_ylabel('Magnitude (dB)')
         ax1.set_title('Mean Magnitude Response with Error Bands')
@@ -1085,7 +1093,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         # Plot X-axis phase with shaded error region
         ax2.plot(common_frequencies, mean_x_phase, 'r-', label='X Axis Mean', linewidth=2)
         ax2.fill_between(common_frequencies, mean_x_phase - std_x_phase, mean_x_phase + std_x_phase, 
-                        color='red', alpha=0.2, label='X Axis Std Dev')
+                        color='red', alpha=0.2)
         
         ax2.set_xlabel('Frequency (Hz)')
         ax2.set_ylabel('Phase (degrees)')
@@ -1116,7 +1124,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         fig.text(0.5, 0.01, f"Analysis of {len(dataframes)} frequency sweep files", 
                 ha='center', fontsize=10, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
         
-        # Save the plot
+        # Save the plot - also including the ring_id in the plot filename
         plot_path = os.path.splitext(output_file)[0] + '_plot.png'
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(plot_path, dpi=300)
@@ -1128,6 +1136,196 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         print(f"Note: Could not create statistics plot: {e}")
     
     return output_file
+
+def compare_statistics_files(stat_files=None, output_name="stats_comparison", directory_path=None, interval=25):
+    """
+    Create a Bode plot comparing multiple statistical CSV files (each containing means and standard deviations).
+    
+    Args:
+        stat_files (list, optional): List of statistical CSV file paths to compare.
+                                   If None, asks user to select from available files.
+        output_name (str): Base name for output plot files
+        directory_path (str, optional): Directory to search for statistics files
+                                      If None, uses the Accelerometerplotter_JSON/statistics directory.
+        interval (int): Interval for frequency tick marks on the plot
+    
+    Returns:
+        str: Path to the created plot file or None if error
+    """
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import glob
+    import os
+    import time
+        
+    # Default to statistics directory if none specified
+    if directory_path is None:
+        directory_path = 'Accelerometerplotter_JSON/statistics'
+        
+    # Ensure directory exists
+    os.makedirs(directory_path, exist_ok=True)
+    
+    # If no files specified, find and list available ones
+    if stat_files is None:
+        # Look for statistics CSV files (containing "avg_" or "stats_")
+        all_stats = glob.glob(os.path.join(directory_path, '**', '*avg_*.csv'), recursive=True)
+        all_stats += glob.glob(os.path.join(directory_path, '**', '*stats_*.csv'), recursive=True)
+        
+        if not all_stats:
+            print(f"No statistics CSV files found in {directory_path}")
+            return None
+        
+        # Show available files to choose from
+        print("\nAvailable statistics files:")
+        for i, file in enumerate(all_stats):
+            print(f"[{i+1}] {os.path.basename(file)}")
+        
+        # Get user selection
+        try:
+            selection_input = input("\nEnter file numbers to compare (comma-separated, e.g., 1,3,4): ")
+            indices = [int(x.strip())-1 for x in selection_input.split(",") if x.strip()]
+            stat_files = [all_stats[i] for i in indices if 0 <= i < len(all_stats)]
+            
+            if not stat_files:
+                print("No valid files selected")
+                return None
+                
+        except (ValueError, IndexError) as e:
+            print(f"Error selecting files: {e}")
+            return None
+    
+    if len(stat_files) == 0:
+        print("No statistics files to compare")
+        return None
+    
+    # Colors for different datasets
+    colors = ['r', 'b', 'g', 'c', 'm', 'orange', 'purple', 'brown', 'olive', 'pink']
+    
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
+    fig.suptitle('Statistical Analysis Comparison', fontsize=16)
+    
+    # Keep track of min/max frequencies for axis scaling
+    min_freq = float('inf')
+    max_freq = 0
+    
+    # Process each statistics file
+    for i, stat_file in enumerate(stat_files):
+        try:
+            # Determine color for this dataset
+            color = colors[i % len(colors)]
+            
+            # Extract ring ID from the filename
+            # Format is typically: avg_sweep_[ring_id]_[timestamp].csv
+            filename = os.path.basename(stat_file)
+            
+            # Parse for ring ID in the filename
+            ring_id = "unknown"
+            
+            # Example filename: avg_sweep_s1_20231001_1930.csv
+            parts = filename.split('_')
+            if len(parts) >= 3:
+                ring_id = parts[2]
+            
+            # Create a more descriptive label that includes the ring ID
+            label_base = f"Ring {ring_id}"
+
+            # Load the statistics file
+            df = pd.read_csv(stat_file)
+            
+            # Check for required columns
+            required_columns = ['Frequency', 'Mean X Gain', 'Std X Gain', 'Mean X Phase (deg)', 'Std X Phase (deg)']
+            if not all(col in df.columns for col in required_columns):
+                print(f"Warning: File {os.path.basename(stat_file)} is missing required columns")
+                print(f"Available columns: {df.columns.tolist()}")
+                continue
+            
+            # Update frequency range
+            min_freq = min(min_freq, df['Frequency'].min())
+            max_freq = max(max_freq, df['Frequency'].max())
+            
+            # Convert gain to dB for plotting
+            mean_gain_db = 20 * np.log10(df['Mean X Gain'])
+            
+            # Calculate dB bounds for standard deviation
+            gain_upper_db = 20 * np.log10(df['Mean X Gain'] + df['Std X Gain'])
+            gain_lower_db = 20 * np.log10(np.maximum(df['Mean X Gain'] - df['Std X Gain'], 1e-10))  # Prevent negative values
+            
+            # Plot magnitude
+            ax1.plot(df['Frequency'], mean_gain_db, color=color, linestyle='-', 
+                    label=label_base, linewidth=2)
+            ax1.fill_between(df['Frequency'], gain_lower_db, gain_upper_db, 
+                            color=color, alpha=0.2)
+            
+            # Plot phase
+            ax2.plot(df['Frequency'], df['Mean X Phase (deg)'], color=color, linestyle='-',
+                    label=label_base, linewidth=2)
+            ax2.fill_between(df['Frequency'], 
+                            df['Mean X Phase (deg)'] - df['Std X Phase (deg)'], 
+                            df['Mean X Phase (deg)'] + df['Std X Phase (deg)'],
+                            color=color, alpha=0.2)
+            
+            print(f"Processed: {os.path.basename(stat_file)} (Ring ID: {ring_id})")
+            
+        except Exception as e:
+            print(f"Error processing {os.path.basename(stat_file)}: {e}")
+    
+    # Set up the plot axes
+    ax1.set_ylabel('Magnitude (dB)')
+    ax1.set_title('Mean Magnitude Response with Error Bands')
+    ax1.grid(True, which="both", ls="-", alpha=0.7)
+    ax1.legend(loc='upper right')
+    
+    ax2.set_xlabel('Frequency (Hz)')
+    ax2.set_ylabel('Phase (degrees)')
+    ax2.set_title('Mean Phase Response with Error Bands')
+    ax2.grid(True, which="both", ls="-", alpha=0.7)
+    ax2.legend(loc='upper right')
+    
+    # Generate tick locations at specified interval
+    # Round min/max to nearest interval for nice bounds
+    start_tick = int(min_freq / interval) * interval
+    if start_tick < min_freq:
+        start_tick += interval
+        
+    end_tick = int(max_freq / interval) * interval
+    if end_tick > max_freq:
+        end_tick -= interval
+        
+    # Create frequency ticks
+    freq_ticks = np.arange(start_tick, end_tick + interval, interval)
+    
+    # Apply to both axes (they share x-axis)
+    ax2.set_xticks(freq_ticks)
+    ax2.set_xticklabels([f"{x}" for x in freq_ticks])
+    ax2.minorticks_off()  # Turn off minor ticks for cleaner look
+    
+    # Add information about the number of files compared
+    fig.text(0.5, 0.01, f"Comparison of {len(stat_files)} statistical datasets", 
+             ha='center', fontsize=10, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
+    
+    # Save the plot in a subfolder called "comparison" right under the base folder
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    
+    # Create the comparison output directory under base folder
+    base_folder = 'Accelerometerplotter_JSON'
+    output_dir = os.path.join(base_folder, 'comparison')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate output file path
+    plot_path = os.path.join(output_dir, f"{output_name}_{timestamp}.png")
+    
+    try:
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(plot_path, dpi=300)
+        plt.close(fig)
+        print(f"\nComparison plot saved to: {plot_path}")
+    except Exception as e:
+        print(f"Error saving plot: {e}")
+        return None
+    
+    return plot_path
 
 def offline_commands():
     # Get user input
@@ -1232,6 +1430,8 @@ def offline_commands():
         else:
             print("Error: Please specify a directory containing CSV files")
             print("Usage: stats <directory>")
+    elif command == "compare":
+        compare_statistics_files()
     else:
         print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
 
