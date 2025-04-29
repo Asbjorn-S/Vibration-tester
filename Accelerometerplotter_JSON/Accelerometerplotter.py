@@ -1056,7 +1056,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
     output_df.to_csv(output_file, index=False, float_format='%.6f')
     print(f"\nStatistics saved to: {output_file}")
     
-    # Also create a plot of the mean with error bars
+    # Also create a plot of the mean with shaded error bands
     try:
         import matplotlib.pyplot as plt
         
@@ -1064,32 +1064,61 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", dir
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
         fig.suptitle('Frequency Sweep Statistics', fontsize=16)
         
-        # Plot gain with error bars
-        ax1.errorbar(common_frequencies, 20*np.log10(mean_x_gain), 
-                    yerr=20*np.log10(1 + std_x_gain/mean_x_gain), 
-                    fmt='r-o', label='X Axis', capsize=3, markersize=4)
-        ax1.errorbar(common_frequencies, 20*np.log10(mean_y_gain), 
-                    yerr=20*np.log10(1 + std_y_gain/mean_y_gain), 
-                    fmt='b-o', label='Y Axis', capsize=3, markersize=4)
+        # Convert gain to dB for plotting
+        mean_x_gain_db = 20 * np.log10(mean_x_gain)
+        
+        # Calculate upper and lower bounds for gain in dB
+        # We need to convert to dB separately to handle the logarithmic relationship correctly
+        x_gain_upper_db = 20 * np.log10(mean_x_gain + std_x_gain)
+        x_gain_lower_db = 20 * np.log10(np.maximum(mean_x_gain - std_x_gain, 1e-10))  # Prevent negative values
+        
+        # Plot X-axis gain with shaded error region
+        ax1.plot(common_frequencies, mean_x_gain_db, 'r-', label='X Axis Mean', linewidth=2)
+        ax1.fill_between(common_frequencies, x_gain_lower_db, x_gain_upper_db, 
+                        color='red', alpha=0.2, label='X Axis Std Dev')
+        
         ax1.set_ylabel('Magnitude (dB)')
-        ax1.set_title('Mean Magnitude Response with Std Dev')
+        ax1.set_title('Mean Magnitude Response with Error Bands')
         ax1.grid(True, which="both", ls="-", alpha=0.7)
         ax1.legend()
         
-        # Plot phase with error bars
-        ax2.errorbar(common_frequencies, mean_x_phase, yerr=std_x_phase, 
-                    fmt='r-o', label='X Axis', capsize=3, markersize=4)
-        ax2.errorbar(common_frequencies, mean_y_phase, yerr=std_y_phase, 
-                    fmt='b-o', label='Y Axis', capsize=3, markersize=4)
+        # Plot X-axis phase with shaded error region
+        ax2.plot(common_frequencies, mean_x_phase, 'r-', label='X Axis Mean', linewidth=2)
+        ax2.fill_between(common_frequencies, mean_x_phase - std_x_phase, mean_x_phase + std_x_phase, 
+                        color='red', alpha=0.2, label='X Axis Std Dev')
+        
         ax2.set_xlabel('Frequency (Hz)')
         ax2.set_ylabel('Phase (degrees)')
-        ax2.set_title('Mean Phase Response with Std Dev')
+        ax2.set_title('Mean Phase Response with Error Bands')
         ax2.grid(True, which="both", ls="-", alpha=0.7)
         ax2.legend()
+
+        # Generate tick locations at 25Hz intervals
+        # Round min/max to nearest interval for nice bounds
+        interval = 25  # Fixed 25Hz interval
+        start_tick = int(min_freq / interval) * interval
+        if start_tick < min_freq:
+            start_tick += interval
+            
+        end_tick = int(max_freq / interval) * interval
+        if end_tick > max_freq:
+            end_tick -= interval
+            
+        # Create frequency ticks
+        freq_ticks = np.arange(start_tick, end_tick + interval, interval)
+        
+        # Apply to both axes (they share x-axis)
+        ax2.set_xticks(freq_ticks)
+        ax2.set_xticklabels([f"{x}" for x in freq_ticks])
+        ax2.minorticks_off()  # Turn off minor ticks for cleaner look
+        
+        # Add information about the number of files analyzed
+        fig.text(0.5, 0.01, f"Analysis of {len(dataframes)} frequency sweep files", 
+                ha='center', fontsize=10, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
         
         # Save the plot
         plot_path = os.path.splitext(output_file)[0] + '_plot.png'
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(plot_path, dpi=300)
         plt.close(fig)
         
