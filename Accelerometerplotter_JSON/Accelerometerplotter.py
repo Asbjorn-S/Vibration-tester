@@ -523,9 +523,9 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         print(f"\nTest results saved to: {csv_filename}")
         
         # Create a Bode plot automatically for this sweep
-        bode_plot_path = create_bode_plot(csv_filename)
-        if bode_plot_path:
-            print(f"Bode plot created: {bode_plot_path}")
+        # bode_plot_path = create_bode_plot(csv_filename)
+        # if bode_plot_path:
+        #     print(f"Bode plot created: {bode_plot_path}")
     
     return test_results
 
@@ -631,21 +631,6 @@ def create_bode_plot(csv_file=None, interval=25):
     ax2.set_xticks(freq_ticks)
     ax2.set_xticklabels([f"{x}" for x in freq_ticks])
     ax2.minorticks_off()  # Turn off minor ticks for cleaner look
-    
-    plt.tight_layout()
-    
-    # Save the figure
-    plot_path = os.path.splitext(csv_file)[0] + '_bode.png'
-    
-    try:
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        print(f"Bode plot saved to: {plot_path}")
-    except Exception as e:
-        print(f"Error saving Bode plot: {e}")
-        return None
-        
-    plt.close(fig)
-    return plot_path
     
     plt.tight_layout()
     
@@ -881,6 +866,237 @@ def create_combined_bode_plot(csv_files=None, output_name="combined_bode_plot", 
         return None, None
     
     return x_plot_path, y_plot_path
+
+def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep_data", directory_path=None):
+    """
+    Calculate average and standard deviation from multiple frequency sweep CSV files.
+    Handles frequency mismatches through interpolation.
+    
+    Args:
+        csv_files (list, optional): List of CSV file paths to analyze.
+                                   If None, asks user to select from available files.
+        output_name (str): Base name for output CSV file
+        directory_path (str, optional): Directory to search for CSV files
+                                       If None, uses the Accelerometerplotter_JSON directory.
+    
+    Returns:
+        str: Path to the created statistics CSV file or None if error
+    """
+    import pandas as pd
+    import numpy as np
+    import glob
+    import os
+    import time
+    from scipy.interpolate import interp1d
+    
+    # Default to Accelerometerplotter_JSON directory if none specified
+    if directory_path is None:
+        directory_path = 'Accelerometerplotter_JSON'
+    
+    # If no files specified, find and list available ones
+    if csv_files is None:
+        all_csvs = glob.glob(os.path.join(directory_path, '**', '*sweep*.csv'), recursive=True)
+        if not all_csvs:
+            print(f"No frequency sweep CSV files found in {directory_path}")
+            return None
+        
+        # Show available files to choose from
+        print("\nAvailable frequency sweep files:")
+        for i, file in enumerate(all_csvs):
+            print(f"[{i+1}] {os.path.basename(file)}")
+        
+        print("\n[0] Select ALL files")
+        
+        # Get user selection
+        try:
+            selection_input = input("\nEnter file numbers to analyze (comma-separated, e.g., 1,3,4) or 0 for all: ")
+            
+            # Check if user wants all files
+            if selection_input.strip() == "0":
+                csv_files = all_csvs
+                print(f"Selected all {len(csv_files)} files")
+            else:
+                indices = [int(x.strip())-1 for x in selection_input.split(",") if x.strip()]
+                csv_files = [all_csvs[i] for i in indices if 0 <= i < len(all_csvs)]
+            
+            if not csv_files:
+                print("No valid files selected")
+                return None
+                
+        except (ValueError, IndexError) as e:
+            print(f"Error selecting files: {e}")
+            return None
+    
+    if len(csv_files) < 2:
+        print("Need at least two CSV files for statistical analysis")
+        return None
+    
+    # Step 1: Load all dataframes and determine frequency range
+    dataframes = []
+    min_freq = float('inf')
+    max_freq = 0
+    
+    print(f"\nLoading and validating {len(csv_files)} CSV files...")
+    
+    for csv_file in csv_files:
+        try:
+            df = pd.read_csv(csv_file)
+            
+            # Check required columns
+            required_columns = ['Frequency', 'X Gain', 'Y Gain', 'X Phase (deg)', 'Y Phase (deg)']
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                print(f"Warning: File {os.path.basename(csv_file)} is missing required columns: {missing}")
+                continue
+                
+            # Sort by frequency (just to be sure)
+            df = df.sort_values('Frequency')
+            
+            # Update overall min/max frequency
+            min_freq = min(min_freq, df['Frequency'].min())
+            max_freq = max(max_freq, df['Frequency'].max())
+            
+            dataframes.append(df)
+            print(f"  ✓ Loaded {os.path.basename(csv_file)} - {len(df)} frequency points")
+            
+        except Exception as e:
+            print(f"  ✗ Error reading {os.path.basename(csv_file)}: {e}")
+    
+    if not dataframes:
+        print("No valid data found in provided CSV files")
+        return None
+        
+    print(f"\nIdentified frequency range: {min_freq:.1f}Hz to {max_freq:.1f}Hz")
+    
+    # Step 2: Create a common frequency grid
+    # Find the dataset with the most frequency points for reference
+    reference_df = max(dataframes, key=len)
+    
+    # Option 1: Use frequencies from the dataset with the most points
+    common_frequencies = reference_df['Frequency'].values
+    
+    # Option 2: Create a uniform grid (uncomment if preferred)
+    # step_size = 5.0  # Hz
+    # common_frequencies = np.arange(min_freq, max_freq + step_size, step_size)
+    
+    # Step 3: Interpolate each dataset to the common frequency grid
+    print(f"Interpolating all datasets to common frequency points...")
+    
+    # Create storage for interpolated values
+    all_x_gains = []
+    all_y_gains = []
+    all_x_phases = []
+    all_y_phases = []
+    
+    for i, df in enumerate(dataframes):
+        try:
+            # Create interpolation functions for each column
+            x_gain_interp = interp1d(df['Frequency'], df['X Gain'], 
+                                   kind='linear', bounds_error=False, fill_value='extrapolate')
+            y_gain_interp = interp1d(df['Frequency'], df['Y Gain'], 
+                                   kind='linear', bounds_error=False, fill_value='extrapolate')
+            x_phase_interp = interp1d(df['Frequency'], df['X Phase (deg)'], 
+                                    kind='linear', bounds_error=False, fill_value='extrapolate')
+            y_phase_interp = interp1d(df['Frequency'], df['Y Phase (deg)'], 
+                                    kind='linear', bounds_error=False, fill_value='extrapolate')
+            
+            # Apply interpolation to common frequency grid
+            all_x_gains.append(x_gain_interp(common_frequencies))
+            all_y_gains.append(y_gain_interp(common_frequencies))
+            all_x_phases.append(x_phase_interp(common_frequencies))
+            all_y_phases.append(y_phase_interp(common_frequencies))
+            
+        except Exception as e:
+            print(f"  ✗ Error interpolating dataset {i+1}: {e}")
+    
+    # Convert to numpy arrays for calculations
+    x_gains = np.array(all_x_gains)
+    y_gains = np.array(all_y_gains)
+    x_phases = np.array(all_x_phases)
+    y_phases = np.array(all_y_phases)
+    
+    # Calculate statistics
+    print("Calculating statistics...")
+    
+    # Calculate means
+    mean_x_gain = np.mean(x_gains, axis=0)
+    mean_y_gain = np.mean(y_gains, axis=0)
+    mean_x_phase = np.mean(x_phases, axis=0)
+    mean_y_phase = np.mean(y_phases, axis=0)
+    
+    # Calculate standard deviations
+    std_x_gain = np.std(x_gains, axis=0, ddof=1)  # Using ddof=1 for sample std
+    std_y_gain = np.std(y_gains, axis=0, ddof=1)
+    std_x_phase = np.std(x_phases, axis=0, ddof=1)
+    std_y_phase = np.std(y_phases, axis=0, ddof=1)
+    
+    # Create output dataframe
+    output_df = pd.DataFrame({
+        'Frequency': common_frequencies,
+        'Mean X Gain': mean_x_gain,
+        'Std X Gain': std_x_gain,
+        'Mean Y Gain': mean_y_gain,
+        'Std Y Gain': std_y_gain,
+        'Mean X Phase (deg)': mean_x_phase,
+        'Std X Phase (deg)': std_x_phase,
+        'Mean Y Phase (deg)': mean_y_phase,
+        'Std Y Phase (deg)': std_y_phase
+    })
+    
+    # Create output directory
+    output_dir = os.path.join(directory_path, 'statistics')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save to CSV
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    output_file = os.path.join(output_dir, f"{output_name}_{timestamp}.csv")
+    
+    output_df.to_csv(output_file, index=False, float_format='%.6f')
+    print(f"\nStatistics saved to: {output_file}")
+    
+    # Also create a plot of the mean with error bars
+    try:
+        import matplotlib.pyplot as plt
+        
+        # Create figure
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+        fig.suptitle('Frequency Sweep Statistics', fontsize=16)
+        
+        # Plot gain with error bars
+        ax1.errorbar(common_frequencies, 20*np.log10(mean_x_gain), 
+                    yerr=20*np.log10(1 + std_x_gain/mean_x_gain), 
+                    fmt='r-o', label='X Axis', capsize=3, markersize=4)
+        ax1.errorbar(common_frequencies, 20*np.log10(mean_y_gain), 
+                    yerr=20*np.log10(1 + std_y_gain/mean_y_gain), 
+                    fmt='b-o', label='Y Axis', capsize=3, markersize=4)
+        ax1.set_ylabel('Magnitude (dB)')
+        ax1.set_title('Mean Magnitude Response with Std Dev')
+        ax1.grid(True, which="both", ls="-", alpha=0.7)
+        ax1.legend()
+        
+        # Plot phase with error bars
+        ax2.errorbar(common_frequencies, mean_x_phase, yerr=std_x_phase, 
+                    fmt='r-o', label='X Axis', capsize=3, markersize=4)
+        ax2.errorbar(common_frequencies, mean_y_phase, yerr=std_y_phase, 
+                    fmt='b-o', label='Y Axis', capsize=3, markersize=4)
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Phase (degrees)')
+        ax2.set_title('Mean Phase Response with Std Dev')
+        ax2.grid(True, which="both", ls="-", alpha=0.7)
+        ax2.legend()
+        
+        # Save the plot
+        plot_path = os.path.splitext(output_file)[0] + '_plot.png'
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=300)
+        plt.close(fig)
+        
+        print(f"Statistics plot saved to: {plot_path}")
+        
+    except Exception as e:
+        print(f"Note: Could not create statistics plot: {e}")
+    
+    return output_file
 
 def main():
     import sys
