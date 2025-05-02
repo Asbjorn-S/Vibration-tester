@@ -7,7 +7,7 @@ import fft_analysis
 import Accelerometerplotter
 
 
-def connect_mqtt(broker_address="192.168.68.126", port=1883, client_id="", 
+def connect_mqtt(broker_address="192.168.68.117", port=1883, client_id="", 
                  username=None, password=None, keepalive=15, retry_interval=2, 
                  max_retries=5):
     """Connect to an MQTT broker and return the client object."""
@@ -188,6 +188,9 @@ def listen_for_commands(client):
         print("10. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
         print("11. bode [csv_file] - Create a Bode plot from sweep results (most recent if no file specified)")
         print("12. combinedbode <directory> - Create a combined Bode plot from selected CSV files in the directory")
+        print("13. stats <directory> - Calculate statistics from CSV files in the directory")
+        print("14. compare <directory> - Compare statistics from CSV files in the directory")
+        print("15. exit - Exit the command interface")
     
     # Show commands at startup
     display_help()
@@ -286,15 +289,21 @@ def listen_for_commands(client):
             elif command.startswith("sweep"):
                 try:
                     parts = command.split()
-                    if len(parts) < 5:
+                    if len(parts) == 2:
+                        start_freq = 350.0
+                        end_freq = 175.0
+                        step_freq = 25.0
+                        ring_id = str(parts[1])
+                    elif len(parts) == 5:
+                        start_freq = float(parts[1])
+                        end_freq = float(parts[2])
+                        step_freq = float(parts[3])
+                        ring_id = str(parts[4])
+                    else:
                         print("Error: Please provide start, end, and step frequencies")
-                        print("Usage: sweep <start_freq> <end_freq> <step_freq> <ring_id>")
+                        print("Usage: sweep [start_freq] [end_freq] [step_freq] <ring_id>")
                         continue
-                        
-                    start_freq = float(parts[1])
-                    end_freq = float(parts[2])
-                    step_freq = float(parts[3])
-                    ring_id = str(parts[4])
+                    
                     
                     print(f"Starting frequency sweep on ring {ring_id}from {start_freq} to {end_freq} Hz with {step_freq} Hz steps")
                         
@@ -329,7 +338,7 @@ def listen_for_commands(client):
                                     if len(parts) >= 2:
                                         ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
                                         # Construct path with the ring directory
-                                        csv_file = f'Accelerometerplotter_JSON/ring_{ring_id}/{csv_file}'
+                                        csv_file = f'Accelerometerplotter_JSON/rings/ring_{ring_id}/{csv_file}'
                                     else:
                                         # Fallback if filename format is unexpected
                                         csv_file = f'Accelerometerplotter_JSON/{csv_file}'
@@ -364,7 +373,7 @@ def listen_for_commands(client):
                     if not os.path.isabs(directory):
                         # If it's a relative path, prepend the base directory
                         if not directory.lower().startswith('accelerometerplotter_json/'):
-                            directory = f'Accelerometerplotter_JSON/{directory}'
+                            directory = f'Accelerometerplotter_JSON/rings/ring_{directory}'
                     
                     print(f"Creating combined Bode plot from CSV files in directory: {directory}")
                     
@@ -377,7 +386,60 @@ def listen_for_commands(client):
                 else:
                     print("Error: Please specify a directory containing CSV files")
                     print("Usage: combinedbode <directory>")
-                
+            elif command.startswith("stats"):
+                # Call the statistics function
+                parts = command.split()
+                if len(parts) > 1:
+                    # User specified a directory
+                    directory = ' '.join(parts[1:])
+
+                    # Normalize path separators to be consistent
+                    directory = directory.replace('\\', '/')
+
+                    # Check if the path is absolute or relative
+                    if not os.path.isabs(directory):
+                        # If it's a relative path, prepend the base directory
+                        if not directory.lower().startswith('accelerometerplotter_json/'):
+                            directory = f'Accelerometerplotter_JSON/rings/ring_{directory}'
+
+                    print(f"Calculating statistics from CSV files in directory: {directory}")
+
+                    # Check if the directory exists before proceeding
+                    if os.path.isdir(directory):
+                        # Pass the directory as directory_path parameter, not as the first argument
+                        Accelerometerplotter.calculate_sweep_statistics(directory_path=directory)
+                    else:
+                        print(f"Error: Directory not found: {directory}")
+                else:
+                    print("Error: Please specify a directory containing CSV files")
+                    print("Usage: stats <directory>")
+            elif command.startswith("compare"):
+                parts = command.split()
+                if len(parts) > 1:
+                    # User specified a directory
+                    directory = ' '.join(parts[1:])
+
+                    # Normalize path separators to be consistent
+                    directory = directory.replace('\\', '/')
+
+                    # Check if the path is absolute or relative
+                    if not os.path.isabs(directory):
+                        # If it's a relative path, prepend the base directory
+                        if not directory.lower().startswith('accelerometerplotter_json/'):
+                            directory = f'Accelerometerplotter_JSON/{directory}'
+
+                    print(f"Comparing statistics from CSV files in directory: {directory}")
+
+                    # Check if the directory exists before proceeding
+                    if os.path.isdir(directory):
+                        # Pass the directory as directory_path parameter, not as the first argument
+                        Accelerometerplotter.compare_statistics_files(directory_path=directory)
+                    else:
+                        print(f"Error: Directory not found: {directory}")
+                else:
+                    print("Error: Please specify a directory containing CSV files")
+                    print("Usage: compare <directory>")
+
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
                 
@@ -446,10 +508,10 @@ def on_message(client, userdata, msg):
             # Process metadata
             try:
                 metadata = json.loads(payload)
-                print("Received test metadata:")
-                print(f"  Sample count: {metadata.get('sampleCount', 'N/A')}")
-                print(f"  Frequency: {metadata.get('frequency', 'N/A')} Hz")
-                print(f"  Sample time: {metadata.get('sampleTime', 'N/A')} µs")
+                # print("Received test metadata:")
+                # print(f"  Sample count: {metadata.get('sampleCount', 'N/A')}")
+                # print(f"  Frequency: {metadata.get('frequency', 'N/A')} Hz")
+                # print(f"  Sample time: {metadata.get('sampleTime', 'N/A')} µs")
                 
                 # Store in global variable for use when processing chunks
                 vibration_metadata = metadata
@@ -478,13 +540,7 @@ def on_message(client, userdata, msg):
                     
                     # Process and store the chunked data
                     output_file = Accelerometerplotter.process_vibration_data(data, chunk_num, total_chunks, vibration_metadata)
-                    
-                    # If we've received all chunks and combined them, analyze the data
-                    if output_file:
-                        print(f"Complete dataset saved to {output_file}, ready for analysis")
-                        # Plot the vibration data automatically
-                        # calculate_accelerometer_gain(output_file)
-                        # plot_vibration_data(output_file)
+
                 else:
                     print("Received single data message")
                     # Handle single message if needed
@@ -513,3 +569,7 @@ def setup_mqtt_callbacks(client):
     client.subscribe("vibration/metadata")
     
     print("MQTT callbacks configured and topics subscribed")
+
+
+if __name__ == "__main__":
+    Accelerometerplotter.main()

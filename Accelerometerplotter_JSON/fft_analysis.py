@@ -81,9 +81,9 @@ def calculate_phase_gain_from_fft(fft_data):
     amplitude2 = 2.0/N * np.abs(yf2[dominant_idx])
     gain = amplitude2 / amplitude1
     
-    print(f"Dominant frequency: {dominant_freq:.2f} Hz")
-    print(f"Phase difference: {phase_diff_deg:.2f} degrees")
-    print(f"Gain: {gain:.2f}")
+    # print(f"Dominant frequency: {dominant_freq:.2f} Hz")
+    # print(f"Phase difference: {phase_diff_deg:.2f} degrees")
+    # print(f"Gain: {gain:.2f}")
     
     return {
         "dominant_freq": dominant_freq,
@@ -185,10 +185,10 @@ def analyze(json_file=None, config=None, doPlot=False):
     y_axis_fft = calculate_fft(data["y1"], data["y2"], config["sample_rate"])
     
     # Calculate phase information
-    print("Phase difference for X axis:")
+    # print("Phase difference for X axis:")
     x_phase = calculate_phase_gain_from_fft(x_axis_fft)
     
-    print("Phase difference for Y axis:")
+    # print("Phase difference for Y axis:")
     y_phase = calculate_phase_gain_from_fft(y_axis_fft)
     
     if doPlot:

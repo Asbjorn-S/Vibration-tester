@@ -14,7 +14,7 @@ from communication import received_metadata
 matplotlib.use('Agg')  # Use non-interactive backend for plots
 plt.ioff()  # Disable interactive mode
 
-onlineMode = False  # Set to True if using MQTT broker for real-time data
+onlineMode = True  # Set to True if using MQTT broker for real-time data
 
 def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
     """
@@ -40,7 +40,7 @@ def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
     
     # Check if we have all chunks
     if chunk_num == total_chunks:
-        print("All chunks received. Combining data...")
+        # print("All chunks received. Combining data...")
         
         # Get frequency value for filename
         test_frequency = vibration_metadata.get("frequency", 0.0)
@@ -86,8 +86,8 @@ def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
             json.dump(combined_data, f, indent=2)
         
         print(f"Combined dataset saved to {output_file}")
-        print(f"Total samples: {combined_data['metadata']['total_samples']}")
-        print(f"Test frequency: {combined_data['metadata']['frequency']} Hz")
+        # print(f"Total samples: {combined_data['metadata']['total_samples']}")
+        # print(f"Test frequency: {combined_data['metadata']['frequency']} Hz")
         
         # Try to remove temp directory if empty, but handle permission errors
         # try:
@@ -311,14 +311,7 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         for attempt in range(1, max_retries + 1):
             print(f"Sending test command for {freq} Hz (attempt {attempt}/{max_retries})...")
             
-            # Send command with QoS 2
-            msg_info = client.publish("vibration/test", str(freq), qos=2)
-            msg_delivered = msg_info.wait_for_publish(timeout=2)
-            
-            if not msg_delivered:
-                print(f"Warning: Message delivery not confirmed, retrying...")
-                # Continue waiting for data even if message delivery isn't confirmed
-                # The message might still have been delivered
+            client.publish("vibration/test", str(freq))
             
             # Wait for data
             wait_time = 0
@@ -330,13 +323,12 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
                 current_files = glob.glob(f"{base_dir}/vibration_*.json")
                 if len(current_files) > initial_file_count:
                     newest_file = max(current_files, key=os.path.getmtime)
-                    print(f"New data file detected: {os.path.basename(newest_file)}")
+                    # print(f"New data file detected: {os.path.basename(newest_file)}")
                     time.sleep(2)  # Give it a moment to complete writing
                     return True, newest_file
                 
                 # Also check if metadata was received, which indicates test started
-                global received_metadata
-                if received_metadata and not initial_metadata_received:
+                if communication.received_metadata and not initial_metadata_received:
                     initial_metadata_received = True
                     print("Test in progress (metadata received)...")
                     
@@ -383,8 +375,8 @@ def test_frequency_range(client, start_freq, end_freq, step_freq, ring_id):
         return []
     
     # Create ring-specific directory
-    base_dir = 'Accelerometerplotter_JSON/rings'
-    ring_dir = os.path.join(base_dir, f"ring_{ring_id}")
+    base_dir = 'Accelerometerplotter_JSON'
+    ring_dir = os.path.join(base_dir, f"rings/ring_{ring_id}")
     os.makedirs(ring_dir, exist_ok=True)
     
     # Find the next available test number
@@ -1390,7 +1382,7 @@ def offline_commands():
             if not os.path.isabs(directory):
                 # If it's a relative path, prepend the base directory
                 if not directory.lower().startswith('accelerometerplotter_json/'):
-                    directory = f'Accelerometerplotter_JSON/rings/{directory}'
+                    directory = f'Accelerometerplotter_JSON/rings/ring_{directory}'
             
             print(f"Creating combined Bode plot from CSV files in directory: {directory}")
             
@@ -1417,7 +1409,7 @@ def offline_commands():
             if not os.path.isabs(directory):
                 # If it's a relative path, prepend the base directory
                 if not directory.lower().startswith('accelerometerplotter_json/'):
-                    directory = f'Accelerometerplotter_JSON/rings/{directory}'
+                    directory = f'Accelerometerplotter_JSON/rings/ring_{directory}'
             
             print(f"Calculating statistics from CSV files in directory: {directory}")
             
@@ -1430,8 +1422,29 @@ def offline_commands():
         else:
             print("Error: Please specify a directory containing CSV files")
             print("Usage: stats <directory>")
-    elif command == "compare":
-        compare_statistics_files()
+    elif command.startswith("compare"):
+        parts = command.split()
+        if len(parts) > 1:
+            # User specified a directory
+            directory = ' '.join(parts[1:])
+            
+            # Normalize path separators to be consistent
+            directory = directory.replace('\\', '/')
+            
+            # Check if the path is absolute or relative
+            if not os.path.isabs(directory):
+                # If it's a relative path, prepend the base directory
+                if not directory.lower().startswith('accelerometerplotter_json/'):
+                    directory = f'Accelerometerplotter_JSON/{directory}'
+            
+            print(f"Comparing statistics from CSV files in directory: {directory}")
+            
+            # Check if the directory exists before proceeding
+            if os.path.isdir(directory):
+                # Pass the directory as directory_path parameter, not as the first argument
+                compare_statistics_files(directory_path=directory)
+            else:
+                print(f"Error: Directory not found: {directory}")
     else:
         print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
 
@@ -1439,7 +1452,7 @@ def main():
     if onlineMode:
         import sys
         # Set up MQTT connection to broker
-        client = communication.connect_mqtt(broker_address="192.168.68.128", port=1883, 
+        client = communication.connect_mqtt(broker_address="192.168.68.116", port=1883, 
                              client_id="AccelerometerPlotter", 
                              keepalive=15)  # Reduced keepalive time
 
