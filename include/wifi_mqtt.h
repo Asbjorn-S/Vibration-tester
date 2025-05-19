@@ -8,7 +8,7 @@
 // WiFi and MQTT configuration
 #define SSID "iOT Deco"         // Replace with your WiFi SSID
 #define PASSWORD "bre-rule-247"   // Replace with your WiFi password
-#define MQTT_SERVER "192.168.68.116" // Replace with your MQTT broker address
+#define MQTT_SERVER "192.168.68.128" // Replace with your MQTT broker address
 
 #define vibration_data_topic "vibration/data" // MQTT topic to publish data
 

@@ -14,7 +14,7 @@ from communication import received_metadata
 matplotlib.use('Agg')  # Use non-interactive backend for plots
 plt.ioff()  # Disable interactive mode
 
-onlineMode = True  # Set to True if using MQTT broker for real-time data
+onlineMode = False  # Set to True if using MQTT broker for real-time data
 
 def process_vibration_data(data, chunk_num, total_chunks, vibration_metadata):
     """
@@ -801,7 +801,7 @@ def create_combined_bode_plot(csv_files=None, output_name="combined_bode_plot", 
     fig_y.text(0.5, 0.01, test_count_info, ha='center', fontsize=10)
     
     # Generate unique output names with timestamp
-    timestamp = time.strftime("%Y%m%d_%H%M")
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
     x_plot_path = os.path.join(output_dir, f"{output_name}_x_axis_{timestamp}.png")
     y_plot_path = os.path.join(output_dir, f"{output_name}_y_axis_{timestamp}.png")
 
@@ -1129,7 +1129,7 @@ def calculate_sweep_statistics(csv_files=None, output_name="avg_sweep", director
     
     return output_file
 
-def compare_statistics_files(stat_files=None, output_name="stats_comparison", directory_path=None, interval=25):
+def compare_statistics_files(stat_files=None, output_name="stats_comparison", directory_path=None, interval=25, axis=None):
     """
     Create a Bode plot comparing multiple statistical CSV files (each containing means and standard deviations).
     
@@ -1140,6 +1140,7 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
         directory_path (str, optional): Directory to search for statistics files
                                       If None, uses the Accelerometerplotter_JSON/statistics directory.
         interval (int): Interval for frequency tick marks on the plot
+        axis (str): Which axis to compare - 'x', 'y', or 'both'
     
     Returns:
         str: Path to the created plot file or None if error
@@ -1158,6 +1159,13 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
     # Ensure directory exists
     os.makedirs(directory_path, exist_ok=True)
     
+    # Validate axis parameter
+    if axis is not None:
+        axis = axis.lower()
+        if axis not in ['x', 'y', 'both']:
+            print(f"Invalid axis parameter: {axis}. Must be 'x', 'y', or 'both'")
+            axis = 'both'  # Default to both if invalid
+
     # If no files specified, find and list available ones
     if stat_files is None:
         # Look for statistics CSV files (containing "avg_" or "stats_")
@@ -1173,7 +1181,7 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
         for i, file in enumerate(all_stats):
             print(f"[{i+1}] {os.path.basename(file)}")
         
-        # Get user selection
+        # Get user selection for files
         try:
             selection_input = input("\nEnter file numbers to compare (comma-separated, e.g., 1,3,4): ")
             indices = [int(x.strip())-1 for x in selection_input.split(",") if x.strip()]
@@ -1191,12 +1199,25 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
         print("No statistics files to compare")
         return None
     
+        # Ask the user which axis to compare
+    if axis is None:
+        axis_choice = input("\nWhich axis to compare? (x/y/both, default=both): ").lower()
+        if axis_choice in ['x', 'y']:
+            axis = axis_choice
+        else:
+            axis = 'both'
+    
     # Colors for different datasets
     colors = ['r', 'b', 'g', 'c', 'm', 'orange', 'purple', 'brown', 'olive', 'pink']
     
-    # Create figure
+    # Always create a figure with magnitude and phase plots, regardless of axis selection
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
-    fig.suptitle('Statistical Analysis Comparison', fontsize=16)
+    
+    if axis == 'both':
+        fig.suptitle('Statistical Analysis Comparison', fontsize=16)
+    else:
+        axis_name = "X-Axis" if axis == 'x' else "Y-Axis"
+        fig.suptitle(f'Statistical Analysis Comparison - {axis_name}', fontsize=16)
     
     # Keep track of min/max frequencies for axis scaling
     min_freq = float('inf')
@@ -1226,37 +1247,125 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
             # Load the statistics file
             df = pd.read_csv(stat_file)
             
+            # Define columns based on axis choice
+            if axis == 'x':
+                gain_cols = ['Mean X Gain', 'Std X Gain']
+                phase_cols = ['Mean X Phase (deg)', 'Std X Phase (deg)']
+            elif axis == 'y':
+                gain_cols = ['Mean Y Gain', 'Std Y Gain']
+                phase_cols = ['Mean Y Phase (deg)', 'Std Y Phase (deg)']
+            else:  # both axes
+                x_gain_cols = ['Mean X Gain', 'Std X Gain']
+                x_phase_cols = ['Mean X Phase (deg)', 'Std X Phase (deg)']
+                y_gain_cols = ['Mean Y Gain', 'Std Y Gain']
+                y_phase_cols = ['Mean Y Phase (deg)', 'Std Y Phase (deg)']
+            
             # Check for required columns
-            required_columns = ['Frequency', 'Mean X Gain', 'Std X Gain', 'Mean X Phase (deg)', 'Std X Phase (deg)']
-            if not all(col in df.columns for col in required_columns):
-                print(f"Warning: File {os.path.basename(stat_file)} is missing required columns")
-                print(f"Available columns: {df.columns.tolist()}")
-                continue
+            if axis == 'x':
+                required_cols = ['Frequency'] + gain_cols + phase_cols
+                if not all(col in df.columns for col in required_cols):
+                    print(f"Warning: File {os.path.basename(stat_file)} is missing required X-axis columns")
+                    print(f"Available columns: {df.columns.tolist()}")
+                    continue
+            elif axis == 'y':
+                required_cols = ['Frequency'] + gain_cols + phase_cols
+                if not all(col in df.columns for col in required_cols):
+                    print(f"Warning: File {os.path.basename(stat_file)} is missing required Y-axis columns")
+                    print(f"Available columns: {df.columns.tolist()}")
+                    continue
+            else:  # both axes
+                required_x_cols = ['Frequency'] + x_gain_cols + x_phase_cols
+                required_y_cols = ['Frequency'] + y_gain_cols + y_phase_cols
+                if not all(col in df.columns for col in required_x_cols):
+                    print(f"Warning: File {os.path.basename(stat_file)} is missing required X-axis columns")
+                    continue
+                if not all(col in df.columns for col in required_y_cols):
+                    print(f"Warning: File {os.path.basename(stat_file)} is missing required Y-axis columns")
+                    continue
             
             # Update frequency range
             min_freq = min(min_freq, df['Frequency'].min())
             max_freq = max(max_freq, df['Frequency'].max())
             
-            # Convert gain to dB for plotting
-            mean_gain_db = 20 * np.log10(df['Mean X Gain'])
-            
-            # Calculate dB bounds for standard deviation
-            gain_upper_db = 20 * np.log10(df['Mean X Gain'] + df['Std X Gain'])
-            gain_lower_db = 20 * np.log10(np.maximum(df['Mean X Gain'] - df['Std X Gain'], 1e-10))  # Prevent negative values
-            
-            # Plot magnitude
-            ax1.plot(df['Frequency'], mean_gain_db, color=color, linestyle='-', 
-                    label=label_base, linewidth=2)
-            ax1.fill_between(df['Frequency'], gain_lower_db, gain_upper_db, 
-                            color=color, alpha=0.2)
-            
-            # Plot phase
-            ax2.plot(df['Frequency'], df['Mean X Phase (deg)'], color=color, linestyle='-',
-                    label=label_base, linewidth=2)
-            ax2.fill_between(df['Frequency'], 
-                            df['Mean X Phase (deg)'] - df['Std X Phase (deg)'], 
-                            df['Mean X Phase (deg)'] + df['Std X Phase (deg)'],
-                            color=color, alpha=0.2)
+            # Plot data based on axis selection
+            if axis == 'x':
+                # Convert gain to dB for plotting
+                mean_gain_db = 20 * np.log10(df[gain_cols[0]])
+                
+                # Calculate dB bounds for standard deviation
+                gain_upper_db = 20 * np.log10(df[gain_cols[0]] + df[gain_cols[1]])
+                gain_lower_db = 20 * np.log10(np.maximum(df[gain_cols[0]] - df[gain_cols[1]], 1e-10))  # Prevent negative values
+                
+                # Plot magnitude
+                ax1.plot(df['Frequency'], mean_gain_db, color=color, linestyle='-', 
+                        label=f"{label_base}", linewidth=2)
+                ax1.fill_between(df['Frequency'], gain_lower_db, gain_upper_db, 
+                                color=color, alpha=0.2)
+                
+                # Plot phase 
+                ax2.plot(df['Frequency'], df[phase_cols[0]], color=color, linestyle='-',
+                        label=f"{label_base}", linewidth=2)
+                ax2.fill_between(df['Frequency'], 
+                                df[phase_cols[0]] - df[phase_cols[1]], 
+                                df[phase_cols[0]] + df[phase_cols[1]],
+                                color=color, alpha=0.2)
+                
+            elif axis == 'y':
+                # Convert gain to dB for plotting
+                mean_gain_db = 20 * np.log10(df[gain_cols[0]])
+                
+                # Calculate dB bounds for standard deviation
+                gain_upper_db = 20 * np.log10(df[gain_cols[0]] + df[gain_cols[1]])
+                gain_lower_db = 20 * np.log10(np.maximum(df[gain_cols[0]] - df[gain_cols[1]], 1e-10))  # Prevent negative values
+                
+                # Plot magnitude
+                ax1.plot(df['Frequency'], mean_gain_db, color=color, linestyle='-', 
+                        label=f"{label_base}", linewidth=2)
+                ax1.fill_between(df['Frequency'], gain_lower_db, gain_upper_db, 
+                                color=color, alpha=0.2)
+                
+                # Plot phase
+                ax2.plot(df['Frequency'], df[phase_cols[0]], color=color, linestyle='-',
+                        label=f"{label_base}", linewidth=2)
+                ax2.fill_between(df['Frequency'], 
+                                df[phase_cols[0]] - df[phase_cols[1]], 
+                                df[phase_cols[0]] + df[phase_cols[1]],
+                                color=color, alpha=0.2)
+                
+            else:  # both axes
+                # X-axis data with solid lines
+                mean_x_gain_db = 20 * np.log10(df[x_gain_cols[0]])
+                x_gain_upper_db = 20 * np.log10(df[x_gain_cols[0]] + df[x_gain_cols[1]])
+                x_gain_lower_db = 20 * np.log10(np.maximum(df[x_gain_cols[0]] - df[x_gain_cols[1]], 1e-10))
+                
+                ax1.plot(df['Frequency'], mean_x_gain_db, color=color, linestyle='-', 
+                        label=f"{label_base} X", linewidth=2)
+                ax1.fill_between(df['Frequency'], x_gain_lower_db, x_gain_upper_db, 
+                                color=color, alpha=0.2)
+                
+                ax2.plot(df['Frequency'], df[x_phase_cols[0]], color=color, linestyle='-',
+                        label=f"{label_base} X", linewidth=2)
+                ax2.fill_between(df['Frequency'], 
+                                df[x_phase_cols[0]] - df[x_phase_cols[1]], 
+                                df[x_phase_cols[0]] + df[x_phase_cols[1]],
+                                color=color, alpha=0.2)
+                
+                # Y-axis data with dashed lines
+                mean_y_gain_db = 20 * np.log10(df[y_gain_cols[0]])
+                y_gain_upper_db = 20 * np.log10(df[y_gain_cols[0]] + df[y_gain_cols[1]])
+                y_gain_lower_db = 20 * np.log10(np.maximum(df[y_gain_cols[0]] - df[y_gain_cols[1]], 1e-10))
+                
+                ax1.plot(df['Frequency'], mean_y_gain_db, color=color, linestyle='--', 
+                        label=f"{label_base} Y", linewidth=2)
+                ax1.fill_between(df['Frequency'], y_gain_lower_db, y_gain_upper_db, 
+                                color=color, alpha=0.1)
+                
+                ax2.plot(df['Frequency'], df[y_phase_cols[0]], color=color, linestyle='--',
+                        label=f"{label_base} Y", linewidth=2)
+                ax2.fill_between(df['Frequency'], 
+                                df[y_phase_cols[0]] - df[y_phase_cols[1]], 
+                                df[y_phase_cols[0]] + df[y_phase_cols[1]],
+                                color=color, alpha=0.1)
             
             print(f"Processed: {os.path.basename(stat_file)} (Ring ID: {ring_id})")
             
@@ -1265,13 +1374,21 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
     
     # Set up the plot axes
     ax1.set_ylabel('Magnitude (dB)')
-    ax1.set_title('Mean Magnitude Response with Error Bands')
+    if axis == 'both':
+        ax1.set_title('Mean Magnitude Response')
+    else:
+        axis_name = "X-Axis" if axis == 'x' else "Y-Axis"
+        ax1.set_title(f'Mean Magnitude Response - {axis_name}')
     ax1.grid(True, which="both", ls="-", alpha=0.7)
     ax1.legend(loc='upper right')
     
     ax2.set_xlabel('Frequency (Hz)')
     ax2.set_ylabel('Phase (degrees)')
-    ax2.set_title('Mean Phase Response with Error Bands')
+    if axis == 'both':
+        ax2.set_title('Mean Phase Response')
+    else:
+        axis_name = "X-Axis" if axis == 'x' else "Y-Axis"
+        ax2.set_title(f'Mean Phase Response - {axis_name}')
     ax2.grid(True, which="both", ls="-", alpha=0.7)
     ax2.legend(loc='upper right')
     
@@ -1288,25 +1405,26 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
     # Create frequency ticks
     freq_ticks = np.arange(start_tick, end_tick + interval, interval)
     
-    # Apply to both axes (they share x-axis)
+    # Apply ticks to x-axis
     ax2.set_xticks(freq_ticks)
     ax2.set_xticklabels([f"{x}" for x in freq_ticks])
     ax2.minorticks_off()  # Turn off minor ticks for cleaner look
     
     # Add information about the number of files compared
-    fig.text(0.5, 0.01, f"Comparison of {len(stat_files)} statistical datasets", 
+    fig.text(0.5, 0.01, f"Comparison of {len(stat_files)} statistical datasets - {axis.upper()} axis", 
              ha='center', fontsize=10, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
     
     # Save the plot in a subfolder called "comparison" right under the base folder
-    timestamp = time.strftime("%Y%m%d_%H%M")
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
     
     # Create the comparison output directory under base folder
     base_folder = 'Accelerometerplotter_JSON'
     output_dir = os.path.join(base_folder, 'comparison')
     os.makedirs(output_dir, exist_ok=True)
     
-    # Generate output file path
-    plot_path = os.path.join(output_dir, f"{output_name}_{timestamp}.png")
+    # Generate output file path with axis information
+    axis_suffix = f"_{axis}axis" if axis != 'both' else ""
+    plot_path = os.path.join(output_dir, f"{output_name}{axis_suffix}_{timestamp}.png")
     
     try:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -1322,54 +1440,8 @@ def compare_statistics_files(stat_files=None, output_name="stats_comparison", di
 def offline_commands():
     # Get user input
     command = input("\nEnter command: ").strip().lower()
+
     if command.startswith("bode"):
-        # Call the Bode plot function
-        parts = command.split()
-        if len(parts) > 1:
-            # User specified a CSV file
-            csv_file = ' '.join(parts[1:])
-            
-            # Normalize path separators to be consistent
-            csv_file = csv_file.replace('\\', '/')
-            
-            # Handle relative paths
-            if not os.path.isabs(csv_file):
-                # Check if the path already contains the base directory
-                if csv_file.lower().startswith('accelerometerplotter_json/rings/'):
-                    # Path already has the base directory, so use as is
-                    pass
-                else:
-                    # File is in the filename-only format
-                    if csv_file.lower().startswith('ring_'):
-                        # Extract ring ID from the filename (format: ring_ID_...)
-                        try:
-                            # Parse out the ring ID from the filename
-                            parts = csv_file.split('_')
-                            if len(parts) >= 2:
-                                ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
-                                # Construct path with the ring directory
-                                csv_file = f'Accelerometerplotter_JSON/rings/ring_{ring_id}/{csv_file}'
-                            else:
-                                # Fallback if filename format is unexpected
-                                csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-                        except Exception as e:
-                            print(f"Error parsing ring ID: {e}")
-                            csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-                    else:
-                        # No ring_ prefix, just add base directory
-                        csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-            
-            print(f"Creating Bode plot from CSV file: {csv_file}")
-                                # Check if file exists before proceeding
-            if os.path.exists(csv_file):
-                create_bode_plot(csv_file)
-            else:
-                print(f"Error: File not found: {csv_file}")
-        else:
-            # Use most recent CSV file
-            print("Creating Bode plot from most recent sweep results...")
-            create_bode_plot()
-    elif command.startswith("combinedbode"):
         parts = command.split()
         if len(parts) > 1:
             # User specified a directory
@@ -1387,7 +1459,7 @@ def offline_commands():
             print(f"Creating combined Bode plot from CSV files in directory: {directory}")
             
             # Check if the directory exists before proceeding
-            if os.path.isdir(directory):
+            if (os.path.isdir(directory)):
                 # Pass the directory as directory_path parameter, not as the first argument
                 create_combined_bode_plot(directory_path=directory)
             else:
@@ -1445,6 +1517,10 @@ def offline_commands():
                 compare_statistics_files(directory_path=directory)
             else:
                 print(f"Error: Directory not found: {directory}")
+        else: 
+            directory = 'Accelerometerplotter_JSON/statistics'
+            print(f"Comparing statistics from CSV files in default directory: {directory}")
+            compare_statistics_files(directory_path=directory)
     else:
         print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
 
@@ -1452,7 +1528,7 @@ def main():
     if onlineMode:
         import sys
         # Set up MQTT connection to broker
-        client = communication.connect_mqtt(broker_address="192.168.68.116", port=1883, 
+        client = communication.connect_mqtt(broker_address="192.168.68.125", port=1883, 
                              client_id="AccelerometerPlotter", 
                              keepalive=15)  # Reduced keepalive time
 

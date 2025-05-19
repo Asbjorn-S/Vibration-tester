@@ -7,7 +7,7 @@ import fft_analysis
 import Accelerometerplotter
 
 
-def connect_mqtt(broker_address="192.168.68.117", port=1883, client_id="", 
+def connect_mqtt(broker_address="192.168.68.128", port=1883, client_id="", 
                  username=None, password=None, keepalive=15, retry_interval=2, 
                  max_retries=5):
     """Connect to an MQTT broker and return the client object."""
@@ -179,18 +179,16 @@ def listen_for_commands(client):
         print("1. help - Display this help message")
         print("2. calibrate - Start the calibration process")
         print("3. test <frequency> - Run a test at specified frequency (Hz)")
-        print("4. frequency <value> - Set the motor frequency (Hz)")
-        print("5. amplitude <value> - Set the motor amplitude (PWM value)")
-        print("6. motor <on/off> - Turn the motor on or off")
-        print("7. plot [filename] - Plot vibration data (most recent if no filename specified)")
-        print("8. exit - Exit the program")
-        print("9. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
-        print("10. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
-        print("11. bode [csv_file] - Create a Bode plot from sweep results (most recent if no file specified)")
-        print("12. combinedbode <directory> - Create a combined Bode plot from selected CSV files in the directory")
-        print("13. stats <directory> - Calculate statistics from CSV files in the directory")
-        print("14. compare <directory> - Compare statistics from CSV files in the directory")
-        print("15. exit - Exit the command interface")
+        print("4. plot [filename] - Plot vibration data (most recent if no filename specified)")
+        print("5. phase [filename] - Calculate phase delay between accelerometers (most recent if no filename specified)")
+        print("6. sweep <start_freq> <end_freq> <step_freq> <ring_id> - Run tests at multiple frequencies")
+        print("7. bode <directory> - Create a combined Bode plot from selected CSV files in the directory")
+        print("8. stats <directory> - Calculate statistics from CSV files in the directory")
+        print("9. compare <directory> - Compare statistics from CSV files in the directory")
+        print("10. frequency <value> - Set the motor frequency (Hz)")
+        print("11. amplitude <value> - Set the motor amplitude (PWM value)")
+        print("12. motor <on/off> - Turn the motor on or off")
+        print("13. exit - Exit the command interface")
     
     # Show commands at startup
     display_help()
@@ -312,55 +310,8 @@ def listen_for_commands(client):
                 except (IndexError, ValueError) as e:
                     print(f"Error: {e}")
                     print("Usage: sweep <start_freq> <end_freq> <step_freq> <ring_id>")
-            
+
             elif command.startswith("bode"):
-                parts = command.split()
-                if len(parts) > 1:
-                    # User specified a CSV file
-                    csv_file = ' '.join(parts[1:])
-                    
-                    # Normalize path separators to be consistent
-                    csv_file = csv_file.replace('\\', '/')
-                    
-                    # Handle relative paths
-                    if not os.path.isabs(csv_file):
-                        # Check if the path already contains the base directory
-                        if csv_file.lower().startswith('accelerometerplotter_json/'):
-                            # Path already has the base directory, so use as is
-                            pass
-                        else:
-                            # File is in the filename-only format
-                            if csv_file.lower().startswith('ring_'):
-                                # Extract ring ID from the filename (format: ring_ID_...)
-                                try:
-                                    # Parse out the ring ID from the filename
-                                    parts = csv_file.split('_')
-                                    if len(parts) >= 2:
-                                        ring_id = parts[1]  # Extract 's1' from 'ring_s1_...'
-                                        # Construct path with the ring directory
-                                        csv_file = f'Accelerometerplotter_JSON/rings/ring_{ring_id}/{csv_file}'
-                                    else:
-                                        # Fallback if filename format is unexpected
-                                        csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-                                except Exception as e:
-                                    print(f"Error parsing ring ID: {e}")
-                                    csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-                            else:
-                                # No ring_ prefix, just add base directory
-                                csv_file = f'Accelerometerplotter_JSON/{csv_file}'
-                    
-                    print(f"Creating Bode plot from CSV file: {csv_file}")
-                    
-                    # Check if file exists before proceeding
-                    if os.path.exists(csv_file):
-                        Accelerometerplotter.create_bode_plot(csv_file)
-                    else:
-                        print(f"Error: File not found: {csv_file}")
-                else:
-                    # Use most recent CSV file
-                    print("Creating Bode plot from most recent sweep results...")
-                    Accelerometerplotter.create_bode_plot()
-            elif command.startswith("combinedbode"):
                 parts = command.split()
                 if len(parts) > 1:
                     # User specified a directory
@@ -437,9 +388,8 @@ def listen_for_commands(client):
                     else:
                         print(f"Error: Directory not found: {directory}")
                 else:
-                    print("Error: Please specify a directory containing CSV files")
-                    print("Usage: compare <directory>")
-
+                    directory = 'Accelerometerplotter_JSON/statistics'
+                    Accelerometerplotter.compare_statistics_files(directory_path=directory)
             else:
                 print(f"Unknown command: '{command}'. Type 'help' to see available commands.")
                 
